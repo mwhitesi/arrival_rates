@@ -2,7 +2,14 @@
 # https://ropenscilabs.github.io/drake-manual/gsp.html.
 
 source("R/packages.R")  # Load all the packages you need.
-source("R/functions.R") # Load all the functions into your environment.
+
+# My general purpose functions
+source("R/timeutils.R")
+
+# Work flow functions
+source("R/dataprep.R") # Load all the functions into your environment.
+
+# Plan building script
 source("R/plan.R")      # Build your workflow plan data frame.
 
 # Now, your functions and workflow plan should be in your environment.
@@ -12,12 +19,6 @@ ls()
 # config <- drake_config(whole_plan) # nolint
 # vis_drake_graph(config)            # nolint
 
-# Now it is time to actually run your project.
-make(whole_plan) # Or make(whole_plan, jobs = 2), etc.
-
-# Now, if you make(whole_plan) again, no work will be done
-# because the results are already up to date.
-# But change the code and some targets will rebuild.
-
-# Read the output report.md file
-# for an overview of the project and the results.
+# Run project
+make(whole_plan)
+progress()

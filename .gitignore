@@ -2,3 +2,6 @@ figure/
 report.md
 rmspe.pdf
 .Rproj.user
+.RData
+.Rhistory
+data/

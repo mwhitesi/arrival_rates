@@ -1,48 +1,23 @@
-# This is where you set up your workflow plan,
-# a data frame with the steps of your analysis.
+# Name: plan.R
+# Desc: Arrival rates plan
+# Author: Matt Whiteside
+# Date: Nov 19, 2018
 
-data(Produc) # Gross State Product
-head(Produc) # ?Produc
+# Data prep plans
 
-# We want to predict "gsp" based on the other variables.
-predictors <- setdiff(colnames(Produc), "gsp")
-
-# We will try all combinations of three covariates.
-combos <- tibble::as_tibble(t(combn(predictors, 3)))
-
-# We want a `combos` data frame with all the
-# arguments to `fit_gsp_model()`
-# The `data` argument to fit_gsp_model() is a symbol,
-# which could stand for a generic dataset or an upstream target.
-combos$data <- rlang::syms(rep("Produc", nrow(combos)))
-
-# Let's get some nice target names too.
-combos$id <- apply(combos, 1, paste, collapse = "_")
-
-# Now we make a drake plan: we plan to call
-# fit_gsp_model() iteratively for each row in `combos`.
-model_plan <- map_plan(combos, fit_gsp_model)
-
-# Judge the models based on the root mean squared prediction error (RMSPE)
-rmspe_args <- tibble::tibble(
-  lm_fit = rlang::syms(model_plan$target),
-  data = rlang::syms(combos$data),
-  id = paste0("rmspe_", model_plan$target)
-)
-rmspe_plan <- map_plan(rmspe_args, get_rmspe)
-
-# Aggregate all the results together.
-rmspe_results_plan <- gather_plan(
-  plan = rmspe_plan,
-  target = "rmspe",
-  gather = "rbind"
+# Load & filter
+data_plan <- drake_plan(
+  
+  raw_data = fread(file_in("data/raw/EDMO_Metro_Response_Extract/Report 1.csv"), check.names = T),
+  clean_data = cleanData(raw_data),
+  timed_data1 = timeutils$bin_events_by_time(clean_data, "Event.Datetime", duration=60, period="week", endcol="Unit.Clear.TS")
 )
 
-# Plan some final output.
-output_plan <- drake_plan(
-  plot = ggsave(filename = file_out("rmspe.pdf"), plot = plot_rmspe(rmspe)),
-  report = knit(knitr_in("report.Rmd"), file_out("report.md"), quiet = TRUE)
+my_outliers = evaluate_plan(
+  outlier_plan,
+  wildcard = "dataset__",
+  values = c("timed_data1")
 )
 
-# Put together the whole plan.
-whole_plan <- rbind(model_plan, rmspe_plan, rmspe_results_plan, output_plan)
+
+whole_plan <- bind_plans(data_plan, my_outliers)
