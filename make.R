@@ -7,7 +7,8 @@ source("R/packages.R")  # Load all the packages you need.
 source("R/timeutils.R")
 
 # Work flow functions
-source("R/dataprep.R") # Load all the functions into your environment.
+source("R/dataload_targets.R")
+source("R/analysis_targets.R")
 
 # Plan building script
 source("R/plan.R")      # Build your workflow plan data frame.
@@ -21,4 +22,4 @@ ls()
 
 # Run project
 make(whole_plan)
-progress()
+

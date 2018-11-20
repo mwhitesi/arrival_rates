@@ -1,9 +1,15 @@
-# Name: data_prep.R
+# Name: dataload_targets.R
 # Desc: Load and clean data. Add utility columns
 # Author: Matt Whiteside
 # Date: Nov 19, 2018
 
-cleanData <- function(dt) {
+## Data Munging
+
+loadDataTarget <- function(file.in) {
+  
+  # Load data
+  dt = fread(file.in, check.names = T)
+ 
   # Filter unusable data rows
   
   # Remove odd event categories such as "Training". These use the term "Other"
@@ -21,14 +27,17 @@ cleanData <- function(dt) {
   # Units must have at least one of these actionable TS
   dt = dt[Unit.Onscene.TS != "" | "Unit.Transport.TS" != ""]
   
-  return(dt)
+  # Add time columns
+  timed_data = timeutils$bin_events_by_time(dt, "Event.Datetime", duration=60, period="week", endcol="Unit.Clear.TS")
+  
+  return(timed_data)
 }
 
 
-# Steps to find outliers:
+## Outliers
 
-convertToTbl <- function(dt) {
-  cols <- c("Event.Number","start","interval_length", "Event.Datetime")
+convertToTbl <- function(ts) {
+  cols <- c("Event.Number","start","interval_length", "Event.Datetime", "Unit.Transported.Flag")
   events_tbl = ts[,mget(cols)] %>% as_tibble() %>% mutate(start = as_datetime(start)) %>% 
     as_tbl_time(start) %>% arrange(start)
   
@@ -37,7 +46,7 @@ convertToTbl <- function(dt) {
 
 computeArrivalRates <- function(tbl) {
   ar_tbl = tbl %>% collapse_by("hourly", start_date="2017-01-01", clean=T, side="start") %>% 
-    group_by(start) %>% summarise('arrival_rate'=n())
+    group_by(Unit.Transported.Flag, start) %>% summarise('arrival_rate'=n())
   return(ar_tbl)
 }
 
@@ -46,11 +55,11 @@ computeServiceTime <- function(tbl) {
   return(tt_tbl)
 }
 
-findTSAnomalies <- function(tbl) {
+findAnomalies <- function(tbl, col) {
   # Find outliers using sliding window on time series data
   # Adds columns to tbl
   anomly_tbl <- tbl %>%
-    time_decompose(tbl, 
+    time_decompose(col, 
                    frequency='1 week',
                    trend='1 month',
                    merge = TRUE) %>%
@@ -60,14 +69,33 @@ findTSAnomalies <- function(tbl) {
   return(anomly_tbl)
 }
 
-outlier_plan <- drake_plan(
-  tbl = convertToTbl(dataset__),
-  arrival_rates = computeArrivalRates(tbl),
-  service_time = computeServiceTime(tbl),
-  st_outliers = findSTAnomalies(service_time),
-  ar_outliers = findSTAnomalies(arrival_rates),
-  ar_outlier_plot = ar_outliers %>% plot_anomaly_decomposition(),
-  st_outlier_plot = st_outliers %>% plot_anomaly_decomposition()
+findOutliersTarget <- function(dt, metric) {
   
-)
+  tbl <- convertToTbl(dt)
+  
+  if(metric == "arrival rates") {
+    rt <- computeArrivalRates(tbl)
+    label <- 'arrival_rates'
+    colnm <- 'arrival_rate'
+  } else if(metric == "service time") {
+    rt <- computeServiceTime(tbl)
+    label <- 'service_time'
+    colnm <- 'interval_length'
+  } else {
+    stop(paste('Unknown metric:',metric))
+  }
+  
+  anoms <- findAnomalies(rt, colnm)
+  
+  # Plot anomalies
+  p.decomp = anoms %>% plot_anomalies()
+  ggsave(paste0("data/interim/plot_",label,"__anomalies.pdf"), p.decomp, dev="pdf")
+ 
+  # Filter out anomalies
+  final = anoms %>% filter(anomaly == "No") %>% select(start, colnm)
+  
+  
+  return(final)
+}
+
 
