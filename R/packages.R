@@ -8,6 +8,9 @@ library(tidyr)
 library(tidyverse)
 library(anomalize)
 library(tibbletime)
+library(zoo)
+library(magrittr)
+library(MASS)
 
 
 pkgconfig::set_config("drake::strings_in_dots" = "literals")

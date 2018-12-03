@@ -62,8 +62,8 @@ findAnomalies <- function(tbl, col) {
   # Adds columns to tbl
   anomly_tbl <- tbl %>%
     time_decompose(col, 
-                   frequency='1 week',
-                   trend='1 month',
+                   frequency='1 hour',
+                   trend='1 week',
                    merge = TRUE) %>%
     anomalize(remainder) %>%
     time_recompose()

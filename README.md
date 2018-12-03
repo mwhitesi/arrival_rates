@@ -1,1 +1,23 @@
-This example project analyzes an econometrics dataset to try to find which factors are most strongly associated with gross state product. It is paired with a [chapter in the user manual](https://ropenscilabs.github.io/drake-manual/example-gsp.html). Except for `interactive-tutorial.R`, the files here show how to set up a `drake` project. Run `make.R` to run or update the whole workflow, and read the output `report.md` file to see the results. In practice, you do not need to use the file structure provided, but it does happen to be a reasonable way of doing things.
+# Edmonton Arrival Rates and Time on Task Analysis
+
+## Prereqs:
+1. `data/` directory with required raw directory input files.
+
+## Running:
+To run the drake plan `source('make.R')`. 
+
+To run jobs in parallel, uncomment:
+```
+make(whole_plan)
+# make(whole_plan, jobs=4)
+```
+to
+
+```
+#make(whole_plan)
+make(whole_plan, jobs=4)
+```
+
+Calling `source('clean.R')` will empty the drake cache and force all targets to be re-run.
+
+
