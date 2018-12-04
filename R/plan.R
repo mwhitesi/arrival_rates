@@ -17,8 +17,8 @@ analysis_plan <- drake_plan(
   rates = correlationSummaryTarget(ar_rates, st_rates)
 )
 
-# forecast_targets.R
-forecast_plan <- drake_plan(
+# historical_targets.R
+historical_plan <- drake_plan(
   
 )
 

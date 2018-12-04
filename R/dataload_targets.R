@@ -28,7 +28,7 @@ loadDataTarget <- function(file.in) {
   dt = dt[Unit.Onscene.TS != "" | "Unit.Transport.TS" != ""]
   
   # Add time columns
-  timed_data = timeutils$bin_events_by_time(dt, "Event.Datetime", duration=60, period="week", endcol="Unit.Clear.TS")
+  timed_data = timeutils$format_time(dt, "Event.Datetime", endcol="Unit.Clear.TS")
   
   return(timed_data)
 }

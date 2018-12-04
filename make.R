@@ -9,6 +9,8 @@ source("R/timeutils.R")
 # Work flow functions
 source("R/dataload_targets.R")
 source("R/analysis_targets.R")
+source("R/forecast_targets.R")
+source("R/historical_targets.R")
 
 # Plan building script
 source("R/plan.R")      # Build your workflow plan data frame.

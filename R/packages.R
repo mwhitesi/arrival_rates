@@ -1,6 +1,7 @@
 # Here, load the packages you need for your workflow.
 
 library(drake)
+library(plyr)
 library(ggplot2)
 library(data.table)
 library(lubridate)
