@@ -19,10 +19,15 @@ analysis_plan <- drake_plan(
 
 # historical_targets.R
 historical_plan <- drake_plan(
+  hd = demandTarget(dt1)
+)
+
+# forecast_targets.R
+forecast_plan <- drake_plan(
   
 )
 
 
 
 
-whole_plan <- bind_plans(data_plan, analysis_plan)
+whole_plan <- bind_plans(data_plan, analysis_plan, historical_plan)
