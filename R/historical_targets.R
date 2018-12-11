@@ -5,10 +5,6 @@
 
 demandTarget <- function(datetimes, duration.in.min=15) {
   
-  # Remove IFT
-  datetimes[,'Stream' := paste0(Event.Stream, '-', ifelse(Unit.Transported.Flag == 'N', "No_Transport", "Transported"))]
-  datetimes=datetimes[grepl('911', Stream)]
-  
   # Assign to bins (labels represent begining of time window)
   datetimes = timeutils$bin_time(datetimes, duration.in.min)
   window.counts = timeutils$concurrent_windows(datetimes)
@@ -35,14 +31,14 @@ demandTarget <- function(datetimes, duration.in.min=15) {
           axis.title = element_text(size = 12, face = "bold"),
           strip.text = element_text(size = 12, face = "bold"))
   
-  ggsave(paste0("data/interim/plot_total_period_median_demand.pdf"), p, dev="pdf")
+  ggsave(paste0("data/interim/plot_total_period_median_demand.pdf"), p, dev="pdf", height=8.5, width=11)
 
   # Plot weekly trend
   window.counts[,`:=`(
     weekly.bin=wday(window), 
     daily.bin=as.numeric(window-floor_date(window,"day")) / (duration.in.min*60)
     )]
-  setkey(window.counts, weekday, daily.window)
+  setkey(window.counts, weekly.bin, daily.bin)
   
   weekly.counts <- window.counts[,.(
       n=sum(count), 
@@ -86,7 +82,7 @@ demandTarget <- function(datetimes, duration.in.min=15) {
           axis.title = element_text(size = 12, face = "bold"),
           strip.text = element_text(size = 12, face = "bold"))
   
-  ggsave(paste0("data/interim/plot_weekly_median_demand.pdf"), p.weekly, dev="pdf")
+  ggsave(paste0("data/interim/plot_weekly_median_demand.pdf"), p.weekly, dev="pdf", height=8.5, width=11)
   
   return(window.counts)
 }

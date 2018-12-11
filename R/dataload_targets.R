@@ -12,8 +12,8 @@ loadDataTarget <- function(file.in) {
  
   # Filter unusable data rows
   
-  # Remove odd event categories such as "Training". These use the term "Other"
-  dt = dt[!grepl("Other", Event.Stream)]
+  # Keep only 911 events
+  dt = dt[grepl("911", Event.Stream)]
 
   # Don't count units that are not dispatched
   dt = dt[Unit.Dispatch.TS != ""]
@@ -37,10 +37,8 @@ loadDataTarget <- function(file.in) {
 ## Outliers
 
 convertToTbl <- function(ts) {
-  cols <- c("Event.Number","start","interval_length", "Event.Datetime", 
-            "Stream")
-  tmp = ts[,'Stream' := paste0(Event.Stream, '-', ifelse(Unit.Transported.Flag == 'N', "No_Transport", "Transported"))]
-  events_tbl = tmp[,mget(cols)] %>% as_tibble() %>% mutate(start = as_datetime(start)) %>% 
+  cols <- c("Event.Number","start","interval_length", "Event.Datetime")
+  events_tbl = ts[,mget(cols)] %>% as_tibble() %>% mutate(start = as_datetime(start)) %>% 
     as_tbl_time(start) %>% arrange(start)
   
   return(events_tbl)
@@ -48,7 +46,7 @@ convertToTbl <- function(ts) {
 
 computeArrivalRates <- function(tbl) {
   ar_tbl = tbl %>% collapse_by("hourly", start_date="2017-01-01", clean=T, side="start") %>% 
-    group_by(Stream, start) %>% summarise('arrival_rate'=n())
+    group_by(start) %>% summarise('arrival_rate'=n())
   return(ar_tbl)
 }
 
@@ -62,8 +60,8 @@ findAnomalies <- function(tbl, col) {
   # Adds columns to tbl
   anomly_tbl <- tbl %>%
     time_decompose(col, 
-                   frequency='1 hour',
-                   trend='1 week',
+                   frequency='7 days',
+                   trend='3 months',
                    merge = TRUE) %>%
     anomalize(remainder) %>%
     time_recompose()
@@ -89,12 +87,12 @@ findOutliersTarget <- function(dt, metric) {
   
   anoms <- findAnomalies(rt, colnm)
   
-  # Plot anomalies
+  rt# Plot anomalies
   p.decomp = anoms %>% plot_anomalies()
   ggsave(paste0("data/interim/plot_",label,"__anomalies.pdf"), p.decomp, dev="pdf")
  
   # Filter out anomalies
-  final = anoms %>% filter(anomaly == "No") %>% select(Stream, start, colnm)
+  final = anoms %>% filter(anomaly == "No") %>% select(start, colnm)
   
   
   return(final)

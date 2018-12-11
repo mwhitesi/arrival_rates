@@ -24,10 +24,18 @@ historical_plan <- drake_plan(
 
 # forecast_targets.R
 forecast_plan <- drake_plan(
-  
+  trendsTarget(ar, st),
+  servs = modelTarget(ar, st)
+)
+
+# shift_targets.R
+# Allowable shift types
+shift.types <- c('week_247', 'week_12hr', '4day_10.5hr')
+shifts_plan <- drake_plan(
+  optimumTarget(servs, shift.types)
 )
 
 
 
 
-whole_plan <- bind_plans(data_plan, analysis_plan, historical_plan)
+whole_plan <- bind_plans(data_plan, analysis_plan, historical_plan, forecast_plan)

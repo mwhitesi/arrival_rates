@@ -1,14 +1,14 @@
 # Name: forecast_targets.R
-# Desc: Try different methods to predict ST and AR 
+# Desc: Estimate required crews for each time period using Queueing models
 # Author: Matt Whiteside
 # Date: Nov 27, 2018
 
 
 trendsTarget <- function(ar, st) {
+  # Compare daily trends to identify similar days than can use the same shifts
   
-  
-  st.911 = st %>% filter(grepl('911', Stream))
-  ar.911 = ar %>% filter(grepl('911', Stream))
+  st.911 = st
+  ar.911 = ar
   
   # Compare days
   st.daily = st.911 %>% mutate(weekday=wday(start,label=T)) %>% group_by(weekday) %>% summarise(values=list(interval_length/60))
@@ -37,13 +37,12 @@ trendsTarget <- function(ar, st) {
           strip.text = element_text(size = 12, face = "bold")) +
     ggtitle('P-values Comparing Service Time Distributions')
   
-  ggsave(paste0("data/interim/plot_service_time_distribution_pvalues.pdf"), p.stpvals, dev="pdf")
+  ggsave(paste0("data/interim/plot_service_time_distribution_pvalues.pdf"), p.stpvals, dev="pdf", height=8.5, width=11)
   
   
-  ar.911 = ar.911 %>% group_by(start) %>% summarise(arrival_rate=sum(arrival_rate))
   ar.911 = ar.911 %>% mutate(weekday = factor(wday(start), levels=1:7)) %>% mutate(hour = sprintf('%02d:00', hour(start)))
   
-  ar.911 %>% group_by(weekday,hour) %>% dplyr::summarise(mean=mean(arrival_rate)) %>%
+  p.ar = ar.911 %>% group_by(weekday,hour) %>% dplyr::summarise(mean=mean(arrival_rate)) %>%
     ggplot(aes(x=hour,y=mean,group=weekday,color=weekday)) +
     geom_line() +
     ylab('Average Arrival Rate') +
@@ -58,74 +57,12 @@ trendsTarget <- function(ar, st) {
       axis.title = element_text(size = 12, face = "bold"),
       strip.text = element_text(size = 12, face = "bold"))
   
-  
-  # Weekend 
-  st.daily = st.911 %>% mutate(weekday=wday(start,label=T)) %>% group_by(weekday) %>% summarise(values=list(interval_length/60))
-  st.showdown = st.daily %>% expand(weekday, weekday) %>% dplyr::inner_join(st.daily, by="weekday") %>% 
-    dplyr::inner_join(st.daily,by = c("weekday1" = "weekday")) %>% filter(weekday != weekday1)
-  
-    
-  
-  
-  
-  # Fit distributions
-  fit_exp = fitdist(ems911$interval_length/60, distr="exp", method="mle")
-  fit_ln = fitdist(ems911$interval_length/60, distr="lnorm", method="mle")
-  fit_gamma = fitdist(ems911$interval_length/60, distr="gamma", method="mle")
-  
-  par(mfrow=c(2,2))
-  plot.legend <- c("exponential", "lognormal", "gamma")
-  denscomp(list(fit_exp, fit_ln, fit_gamma), legendtext = plot.legend)
-  cdfcomp (list(fit_exp, fit_ln, fit_gamma), legendtext = plot.legend)
-  qqcomp  (list(fit_exp, fit_ln, fit_gamma), legendtext = plot.legend)
-  ppcomp  (list(fit_exp, fit_ln, fit_gamma), legendtext = plot.legend)
-  
-  gofstat(list(fit_exp, fit_ln, fit_gamma), fitnames = plot.legend)
-  
-  
-  fit_exp = fitdist(ar$arrival_rate, distr="exp", method="mle")
-  fit_ln = fitdist(ar$arrival_rate, distr="lnorm", method="mle")
-  fit_gamma = fitdist(ar$arrival_rate, distr="gamma", method="mle")
-  
-  par(mfrow=c(2,2))
-  plot.legend <- c("exponential", "lognormal", "gamma")
-  denscomp(list(fit_exp, fit_ln, fit_gamma), legendtext = plot.legend)
-  cdfcomp (list(fit_exp, fit_ln, fit_gamma), legendtext = plot.legend)
-  qqcomp  (list(fit_exp, fit_ln, fit_gamma), legendtext = plot.legend)
-  ppcomp  (list(fit_exp, fit_ln, fit_gamma), legendtext = plot.legend)
-  
-  gofstat(list(fit_exp, fit_ln, fit_gamma), fitnames = plot.legend)
-  
-  
-  ggplot(ems911, aes(x=interval_length)) + 
-    labs(x = "", y = "")+ 
-    ggtitle("Exponential Distribution") +
-    geom_histogram(aes(y=..density..), binwidth=60, colour="black", fill="white") + 
-    geom_vline(aes(xintercept=1/fit1$estimate), color="blue", linetype="solid", size=1) +
-    stat_function(fun=dexp, geom="line", size=1, col="red", args=(mean=fit1$estimate))
-  
-  ggplot(ems911, aes(x=interval_length)) + 
-    stat_function(fun=dexp, geom="line", size=1, col="red", args=(mean=fit1$estimate))
-  
- 
-  ems911 %>% ggplot(aes(x=interval_length)) +
-    geom_histogram(binwidth = 60)
-  
-  st.freq = as.tibble(table(sort(ems911$interval_length%/%60)))
-  st.freq %<>% rename(service.time=Var1,frequency=n) %<>% mutate(service.time = as.integer(service.time))
-  
-  
-  # Compare daily trends for AR and ST
-  st.tbl = st %>% mutate(weekday=wday(start, label=T), hour=sprintf("%02d:00", hour(start)))
-  
+  ggsave(paste0("data/interim/plot_daily_arrival_rate_trends.pdf"), p.ar, dev="pdf", height=8.5, width=11)
   
   
   # Weekly totals for the year with a monthly smoothing line
-  # plotLongTermRollingTrend(ar %>% filter(Stream == "911-Transported"), "arrival_rate")
+  # plotLongTermRollingTrend(ar.911, "arrival_rate")
   
-  
- 
-  return(rt)
 }
 
 
@@ -134,27 +71,20 @@ modelTarget <- function(ar, st) {
   
   # Breakdown of weekly data into similar periods
   # Weekend/Weekday
-  weekend <- c(6,0)
+  weekend <- c(1,7)
   
-  # Use appropriate streams
-  st.911 = st %>% filter(grepl('911', Stream))
-  ar.911 = ar %>% filter(grepl('911', Stream))
+  st.911 = st
+  ar.911 = ar
   
-  # Combine transport/non-transport AR 
-  ar.911 = ar.911 %>% group_by(start) %>% summarise(arrival_rate=sum(arrival_rate))
-  
-  st.911 = st.911 %>% mutate(weekday = wday(start)) %>% mutate(group=ifelse(match(weekday, weekend, 0L), "weekend", "weekday"))
-  ar.911 = ar.911 %>% mutate(weekday = wday(start)) %>% mutate(group=ifelse(match(weekday, weekend, 0L), "weekend", "weekday"))
+  st.911 = st.911 %>% mutate(weekday = wday(start)) %>% mutate(group=ifelse(match(weekday, weekend, 0L), "weekend", "weekday")) %>% mutate(hour=hour(start))
+  ar.911 = ar.911 %>% mutate(weekday = wday(start)) %>% mutate(group=ifelse(match(weekday, weekend, 0L), "weekend", "weekday")) %>% mutate(hour=hour(start))
   
   # Talking hours here
   st.911 = st.911 %>% mutate(service.time=interval_length/60/60)
   
   # Aggregate
-  ar.values = ar.911 %>% mutate(weekday = wday(start)) %>% mutate(group=ifelse(match(weekday, weekend, 0L), "weekend", "weekday")) %>%
-    mutate(hour=hour(start)) %>% group_by(group,hour) %>% summarise(values=list(arrival_rate))
-  
-  st.values = st.911 %>% mutate(weekday = wday(start)) %>% mutate(group=ifelse(match(weekday, weekend, 0L), "weekend", "weekday")) %>%
-    mutate(hour=hour(start)) %>% group_by(group,hour) %>% summarise(values=list(service.time))
+  ar.values = ar.911 %>% group_by(group,hour) %>% summarise(values=list(arrival_rate))
+  st.values = st.911 %>% group_by(group,hour) %>% summarise(values=list(service.time))
   
   # Fit a model
   groups = st.values %>% distinct(group) %>% arrange(group) %>% pull(group)
@@ -181,7 +111,7 @@ modelTarget <- function(ar, st) {
     }
   }
   
- required.servers %>% mutate(hour2 = sprintf('%02d:00', hour)) %>%
+ p = required.servers %>% mutate(hour2 = sprintf('%02d:00', hour)) %>%
    ggplot(aes(x=hour2, y=s, group=group)) +
      facet_wrap(. ~ group) +
      geom_line() +
@@ -196,9 +126,11 @@ modelTarget <- function(ar, st) {
            axis.text.x = element_text(angle = 45, hjust = 1, size=10),
            axis.title = element_text(size = 12, face = "bold"),
            strip.text = element_text(size = 12, face = "bold"))
+ 
+  ggsave("data/interim/plot_required_crews.pdf", p, height=8.5, width=11)
      
     
-  
+  return(required.servers)
   
 }
 
