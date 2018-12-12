@@ -11,27 +11,27 @@ shifts <- new.env()
 shifts$shift_options <- function(shift.types, period.stagger=15, period.days=7) {
   # Build matrix of possible shift arrangements and the daily periods that each shift covers
   
-  shifts = list()
-  shift.info = list()
+  sfts = list()
+  sft.info = list()
   i=1
   for(s in shift.types) {
-    tmp = shifts$encode_shift(s, period.stagger, period.days)
-    
-    shifts[i] = tmp$shifts
-    shift.info[i] = tmp$shift.info
+   
+    tmp = shifts$encode_shift(s, period.stagger=period.stagger, period.days=period.days)
+
+    sfts[[i]] = tmp$shifts
+    sft.info[[i]] = tmp$shift.info
     i = i+1
   }
   
-  shifts = do.call(rbind, shifts)
-  shift.info = rbindlist(shift.info)
+  sfts = do.call(rbind, sfts)
+  sft.info = rbindlist(sft.info)
   
-  return(list(shifts=shifts, shift.info=shift.info))
+  return(list(shifts=sfts, shift.info=sft.info))
   
 }
 
 shifts$encode_shift <- function(shift.type, period.stagger=15, period.days=7) {
-
-
+  
   switch(shift.type,
          'week_247'={
            sfts = shifts$encode_247(period.stagger, period.days)
@@ -45,10 +45,12 @@ shifts$encode_shift <- function(shift.type, period.stagger=15, period.days=7) {
          stop('Unrecognized shift type')
   )
   
-  sft.info = as.data.table(sfts$starts)
+  sft.info = data.table(start=sfts$starts, costs=sfts$costs)
   sft.info[,`:=`(type=shift.type)]
   
-  return(list(shifts=sfts$shifts, shift.info=shift.info))
+  #print(sft.info)
+  
+  return(list(shifts=sfts$shifts, shift.info=sft.info))
 }
 
 shifts$encode_247 <- function(period.stagger=15, period.days=7) {
@@ -58,7 +60,7 @@ shifts$encode_247 <- function(period.stagger=15, period.days=7) {
   sfts = matrix(1,ncol=nperiods,nrow=1)
   colnames(sfts) <- seq(1,nperiods)
   
-  return(list(shifts=sfts, starts=c(1)))
+  return(list(shifts=sfts, starts=c(1), costs=c(24)))
 
 }
 
@@ -71,7 +73,6 @@ shifts$encode_week <- function(sft.len, period.stagger=15, period.days=7) {
   day.stagger = 24*60/period.stagger
   
   sfts = matrix(0, ncol=nperiods, nrow=length(sft.periods))
-  
   
   for(p in sft.periods) {
     
@@ -96,9 +97,9 @@ shifts$encode_week <- function(sft.len, period.stagger=15, period.days=7) {
   }
   
   colnames(sfts) <- seq(1,nperiods)
-  starts=rep(1,sft.periods)
+  starts=sft.periods
   
-  return(list(shifts=sfts, starts=starts))
+  return(list(shifts=sfts, starts=starts, costs=rep(12,length(starts))))
 }
 
 shifts$encode_contiguous_days <- function(sft.len, sft.days, period.stagger=15, period.days=7) {
@@ -135,9 +136,9 @@ shifts$encode_contiguous_days <- function(sft.len, sft.days, period.stagger=15, 
   }
   
   colnames(sfts) <- seq(1,nperiods)
-  starts=rep(1,sft.periods)
+  starts=sft.periods
   
-  return(list(shifts=sfts, starts=starts))
+  return(list(shifts=sfts, starts=starts, costs=rep(10.5,length(starts))))
 
 }
 

@@ -24,7 +24,7 @@ historical_plan <- drake_plan(
 
 # forecast_targets.R
 forecast_plan <- drake_plan(
-  trendsTarget(ar, st),
+  st_pvals = trendsTarget(ar, st),
   servs = modelTarget(ar, st)
 )
 

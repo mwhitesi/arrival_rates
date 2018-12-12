@@ -63,6 +63,8 @@ trendsTarget <- function(ar, st) {
   # Weekly totals for the year with a monthly smoothing line
   # plotLongTermRollingTrend(ar.911, "arrival_rate")
   
+  return(st.showdown)
+  
 }
 
 
