@@ -3,7 +3,7 @@
 # Author: Matt Whiteside
 # Date: Dec 11, 2018
 
-optimumTarget <- function(required.servers, shift.types, period.stagger, period.days) {
+optimumTarget <- function(required.servers, shift.types, period.stagger, period.days, solver="glpk") {
   
   
   # Available shifts
@@ -38,8 +38,7 @@ optimumTarget <- function(required.servers, shift.types, period.stagger, period.
     optm = add_constraint(optm, sum_expr(a_fun(i, j)*x[i], i=1:ns) >= r[j])
   }
   
-  result = optm %>% solve_model(with_ROI(solver = "glpk"))
-  result2 = optm %>% solve_model(with_ROI(solver = "symphony"))
+  result = optm %>% solve_model(with_ROI(solver = solver))
   
   soln = data.table(get_solution(result, x[i]))
   soln = soln[value != 0]
@@ -47,18 +46,12 @@ optimumTarget <- function(required.servers, shift.types, period.stagger, period.
   
   shift.summary = soln[,.(start=seconds_to_period((sfts$shift.info$start[i]-1)*period.stagger*60),
           type=sfts$shift.info$type[i],
-          n=value)]
+          n=value,
+          len=sfts$shift.info$costs[i],
+          )]
   
   
-  soln2 = data.table(get_solution(result2, x[i]))
-  soln2 = soln2[value != 0]
-  
-  
-  shift.summary2 = soln2[,.(start=seconds_to_period((sfts$shift.info$start[i]-1)*period.stagger*60),
-                          type=sfts$shift.info$type[i],
-                          n=value)]
-  
-  
+  return(shift.summary, shift.periods=a[soln$i,])
 }
 
 

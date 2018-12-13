@@ -31,8 +31,9 @@ forecast_plan <- drake_plan(
 # shift_targets.R
 # Allowable shift types
 shift.types <- c('week_247', 'week_12hr', '4day_10.5hr')
+solver <- 'glpk'
 shifts_plan <- drake_plan(
-  optimumTarget(servs, shift.types)
+  shifts = optimumTarget(servs, shift.types)
 )
 
 

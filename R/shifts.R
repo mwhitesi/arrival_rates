@@ -142,3 +142,55 @@ shifts$encode_contiguous_days <- function(sft.len, sft.days, period.stagger=15, 
 
 }
 
+
+shifts$plot_weekly_shifts <- function(shift.summary, shift.periods) {
+  
+  
+  # Convert to long format
+  shifts.long = list()
+  i = 1
+  for(r in 1:nrow(shift.summary)) {
+    n=shift.summary[r,n]
+    for(j in 1:n) {
+      se = shifts$extract_start_ends(shift.periods[r,])
+      
+      new.shifts = lapply(se, function(x) {
+        x['type']=shift.summary[r,type]
+        x['name']=paste0('shift_',i)
+        return(x)
+      })
+      i <- i+1
+      
+      shifts.long = append(shifts.long, new.shifts)
+    }
+    
+   
+  }
+  
+  shifts.long = bind_rows(shifts.long)
+  
+  shifts.long %<>% mutate(day=seconds_to_period(start*15*60)@day)
+  
+  
+  
+}
+
+shifts$extract_start_ends <- function(arow) {
+  runs = rle(arow)
+  
+  start.ends <- list()
+  s=0
+  i=1
+  for(r in 1:length(runs$lengths)) {
+    if(runs$values[r] == 1) {
+      # Add daily shift
+      start.ends[[i]] = list(start=s, end=s+runs$lengths[r])
+      i = i+1
+    }
+    
+    s = s+runs$lengths[r]
+  }
+  
+  start.ends
+}
+
