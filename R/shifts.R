@@ -143,7 +143,7 @@ shifts$encode_contiguous_days <- function(sft.len, sft.days, period.stagger=15, 
 }
 
 
-shifts$plot_weekly_shifts <- function(shift.summary, shift.periods) {
+shifts$plot_weekly_shifts <- function(shift.summary, shift.periods, period.stagger, myorigin = "2018-12-9 00:00:00") {
   
   
   # Convert to long format
@@ -156,23 +156,58 @@ shifts$plot_weekly_shifts <- function(shift.summary, shift.periods) {
       
       new.shifts = lapply(se, function(x) {
         x['type']=shift.summary[r,type]
-        x['name']=paste0('shift_',i)
+        x['shift']=i
         return(x)
       })
       i <- i+1
       
       shifts.long = append(shifts.long, new.shifts)
     }
-    
-   
   }
   
   shifts.long = bind_rows(shifts.long)
+  shifts.long %<>% arrange(start)
   
-  shifts.long %<>% mutate(day=seconds_to_period(start*15*60)@day)
+  nperiods = max(shifts.long$end)
+  x.breaks = seq(0.5,nperiods,by=1)
   
+  lims = as.POSIXct(c(0,(nperiods*period.stagger*60)), origin=myorigin, tz="UTC")
   
+  sl = shifts.long %>% mutate(start.ts=seconds_to_period(start*period.stagger*60)) %>% mutate(day=start.ts@day) %>% 
+    mutate(shift.group=paste0(shift,'_day',day)) %>% mutate(shift=as.factor(shift)) %>%
+    mutate(start=as.POSIXct(start*period.stagger*60, origin=myorigin, tz="UTC"),
+           end=as.POSIXct(end*period.stagger*60, origin=myorigin, tz="UTC"))
   
+  sl %>% gather(date.type,date.time,start:end) %>%
+  p = ggplot(aes(x=shift,y=date.time,group=shift.group)) +
+    geom_line(size=4, alpha=.4) +
+    geom_vline(xintercept=x.breaks, colour="grey80", linetype="dotted") + 
+    labs(y=NULL, x=NULL) + coord_flip() +
+    scale_y_datetime(date_labels = "%A %H:%M", date_breaks='6 hour', limits=lims) +
+    shifts$ggplot2_theme() + theme(axis.text.x=element_text(angle=45, hjust=1))
+    
+  
+  return(p)
+}
+
+shifts$ggplot2_theme <- function(base_size=11) {
+    ret <- theme_bw(base_size) %+replace%
+    theme(panel.background = element_rect(fill="#ffffff", colour=NA),
+          axis.title.x=element_text(vjust=-0.2), axis.title.y=element_text(vjust=1.5),
+          title=element_text(vjust=1.2),
+          panel.border = element_blank(), axis.line=element_blank(),
+          panel.grid.minor=element_blank(),
+          panel.grid.major.y = element_blank(),
+          panel.grid.major.x = element_line(size=0.5, colour="grey80"),
+          axis.ticks=element_blank(),
+          legend.position="bottom", 
+          axis.title=element_text(size=rel(0.8)),
+          strip.text=element_text(size=rel(1)),
+          strip.background=element_rect(fill="#ffffff", colour=NA),
+          panel.spacing.y=unit(1.5, "lines"),
+          legend.key = element_blank())
+  
+  ret
 }
 
 shifts$extract_start_ends <- function(arow) {
@@ -192,5 +227,26 @@ shifts$extract_start_ends <- function(arow) {
   }
   
   start.ends
+}
+
+shifts$plot_units_vs_demand <- function(shift.summary, shift.periods, period.stagger, demand.table, myorigin = "2018-12-9 00:00:00") {
+  
+  shifts.long = list()
+  i = 1
+  for(r in 1:nrow(shift.summary)) {
+    n=shift.summary[r,n]
+    for(j in 1:n) {
+      se = shifts$extract_start_ends(shift.periods[r,])
+      shifts.long = append(shifts.long, se)
+    }
+  }
+  
+  shifts.long = bind_rows(shifts.long)
+  shifts.long %<>% arrange(start)
+  
+  
+  
+  nperiods = max(shifts.long$end)
+  
 }
 
