@@ -45,10 +45,7 @@ demandTarget <- function(datetimes, duration.in.min=15) {
       mean=mean(count),
       sd=sd(count),
       p50=quantile(count,.5),
-      p25=quantile(count,.25),
-      p75=quantile(count,.75),
-      p05=quantile(count,.05),
-      p95=quantile(count,.95)
+      p99.9=quantile(count,.999)
     ),
     .(weekly.bin, daily.bin)
   ]
@@ -61,15 +58,14 @@ demandTarget <- function(datetimes, duration.in.min=15) {
              function(r) {
                wd=wday(r["weekly.bin"], label=T)
                hr=seconds_to_period(r["daily.bin"]*duration.in.min*60)
-               return(sprintf('%s %02d:%02d:%02d', wd, hour(hr), minute(hr), second(hr)))
+               return(sprintf('%s %02d:%02d', wd, hour(hr), minute(hr)))
              })
   
   breakpoints <- seq(1, length(weekly.counts$id), 12)
-  p.weekly <- weekly.counts %>% gather(metric,value,p50:p95) %>%
+  p.weekly <- weekly.counts %>% gather(metric,value,p50:p99.9) %>%
     ggplot(aes(x=id, y=value, group=desc(metric))) +
-    geom_line(aes(color=metric, size=metric)) +
-    scale_size_manual(values=c(.9,.9,1.5,.9,.9))+
-    scale_color_manual(values=c("grey85","grey65","black","grey65","grey85"))+
+    geom_line(aes(color=metric), size=1.1) +
+    scale_color_manual(values=c("black", "grey65"))+
     scale_x_continuous(labels=tl[breakpoints], breaks=breakpoints)+
     ylab("Number of Active Units")+
     xlab("Time Period")+

@@ -37,21 +37,21 @@ loadDataTarget <- function(file.in) {
 ## Outliers
 
 convertToTbl <- function(ts) {
-  cols <- c("Event.Number","start","interval_length", "Event.Datetime")
+  cols <- c("Event.Number", "start", "interval_length", "Event.Datetime")
   events_tbl = ts[,mget(cols)] %>% as_tibble() %>% mutate(start = as_datetime(start)) %>% 
     as_tbl_time(start) %>% arrange(start)
   
   return(events_tbl)
 }
 
-computeArrivalRates <- function(tbl) {
-  ar_tbl = tbl %>% collapse_by("hourly", start_date="2017-01-01", clean=T, side="start") %>% 
+computeArrivalRates <- function(tbl, start.date) {
+  ar_tbl = tbl %>% collapse_by("15 minutes", start_date=start.date, clean=T, side="start") %>% 
     group_by(start) %>% summarise('arrival_rate'=n())
   return(ar_tbl)
 }
 
-computeServiceTime <- function(tbl) {
-  tt_tbl = tbl %>% collapse_by("hourly", start_date="2017-01-01", clean=T, side="start")
+computeServiceTime <- function(tbl, start.date) {
+  tt_tbl = tbl %>% collapse_by("15 minutes", start_date=start.date, clean=T, side="start")
   return(tt_tbl)
 }
 
@@ -69,16 +69,16 @@ findAnomalies <- function(tbl, col) {
   return(anomly_tbl)
 }
 
-findOutliersTarget <- function(dt, metric) {
+findOutliersTarget <- function(dt, metric, start.date='2017-01-01') {
   
   tbl <- convertToTbl(dt)
   
   if(metric == "arrival rates") {
-    rt <- computeArrivalRates(tbl)
+    rt <- computeArrivalRates(tbl, start.date)
     label <- 'arrival_rates'
     colnm <- 'arrival_rate'
   } else if(metric == "service time") {
-    rt <- computeServiceTime(tbl)
+    rt <- computeServiceTime(tbl, start.date)
     label <- 'service_time'
     colnm <- 'interval_length'
   } else {

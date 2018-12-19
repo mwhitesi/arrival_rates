@@ -11,7 +11,7 @@ trendsTarget <- function(ar, st) {
   ar.911 = ar
   
   # Compare days
-  st.daily = st.911 %>% mutate(weekday=wday(start,label=T)) %>% group_by(weekday) %>% summarise(values=list(interval_length/60))
+  st.daily = st.911 %>% group_by(weekday) %>% summarise(values=list(interval_length/60))
   st.showdown = st.daily %>% expand(weekday, weekday) %>% dplyr::inner_join(st.daily, by="weekday") %>% 
     dplyr::inner_join(st.daily,by = c("weekday1" = "weekday")) %>% filter(weekday != weekday1)
   
@@ -40,13 +40,11 @@ trendsTarget <- function(ar, st) {
   ggsave(paste0("data/interim/plot_service_time_distribution_pvalues.pdf"), p.stpvals, dev="pdf", height=8.5, width=11)
   
   
-  ar.911 = ar.911 %>% mutate(weekday = factor(wday(start), levels=1:7)) %>% mutate(hour = sprintf('%02d:00', hour(start)))
-  
-  p.ar = ar.911 %>% group_by(weekday,hour) %>% dplyr::summarise(mean=mean(arrival_rate)) %>%
-    ggplot(aes(x=hour,y=mean,group=weekday,color=weekday)) +
+  p.ar = ar.911 %>% group_by(weekday,ts) %>% dplyr::summarise(mean=mean(arrival_rate)) %>%
+    ggplot(aes(x=ts,y=mean,group=weekday,color=weekday)) +
     geom_line() +
     ylab('Average Arrival Rate') +
-    xlab('Hour of Day') +
+    xlab('Time of Day') +
     theme(panel.border = element_blank(),
       panel.background = element_blank(),
       panel.grid.minor = element_line(colour = "grey90"),
@@ -68,75 +66,86 @@ trendsTarget <- function(ar, st) {
 }
 
 
-modelTarget <- function(ar, st) {
-  
-  
-  # Breakdown of weekly data into similar periods
-  # Weekend/Weekday
-  weekend <- c(1,7)
+
+
+modelTarget <- function(ar, st, duration.in.min=15) {
   
   st.911 = st
   ar.911 = ar
   
-  st.911 = st.911 %>% mutate(weekday = wday(start)) %>% mutate(group=ifelse(match(weekday, weekend, 0L), "weekend", "weekday")) %>% mutate(hour=hour(start))
-  ar.911 = ar.911 %>% mutate(weekday = wday(start)) %>% mutate(group=ifelse(match(weekday, weekend, 0L), "weekend", "weekday")) %>% mutate(hour=hour(start))
-  
   # Talking hours here
-  st.911 = st.911 %>% mutate(service.time=interval_length/60/60)
+  st.911 = st.911 %>% mutate(service.time=interval_length/60/duration.in.min)
   
   # Aggregate
-  ar.values = ar.911 %>% group_by(group,hour) %>% summarise(values=list(arrival_rate))
-  st.values = st.911 %>% group_by(group,hour) %>% summarise(values=list(service.time))
+  ar.values = ar.911 %>% group_by(wd,ts) %>% summarise(values=list(arrival_rate))
+  st.values = st.911 %>% group_by(wd,ts) %>% summarise(values=list(service.time))
   
   # Fit a model
-  groups = st.values %>% distinct(group) %>% arrange(group) %>% pull(group)
-  hours = st.values %>% distinct(hour) %>% arrange(hour) %>% pull(hour)
+  groups = st.values %>% distinct(wd) %>% arrange(wd) %>% pull(wd)
+  hours = st.values %>% distinct(ts) %>% arrange(ts) %>% pull(ts)
   
-  stopifnot(length(hours) == 24)
-  stopifnot(nrow(ar.values %>% distinct(hour)) == 24)
+  stopifnot(nrow(ar.values %>% distinct(ts)) == length(hours))
   
+  hlen = length(hours)
   required.servers = as.tibble(expand.grid(groups,hours,0))
-  names(required.servers) = c('group','hour','s')
+  names(required.servers) = c('group','ts','s')
+  
+  # Averge Lag
+  #lag=round(mean(st.911$service.time))-1
+  lag=1
   
   for(g in groups) {
-    for(h in hours) {
-      prev_h = ifelse((h-1)>0, h-1, max(hours))
-      stlist = unlist(st.values %>% filter(group == g & hour == h) %>% select('values')) 
-      arlist = unlist(ar.values %>% filter(group == g & hour == h) %>% select('values'))
-      stlist.prev = unlist(st.values %>% filter(group == g & hour == prev_h) %>% select('values')) 
-      arlist.prev = unlist(ar.values %>% filter(group == g & hour == prev_h) %>% select('values'))
-      est.servers = fitQueueModel(stlist, arlist, stlist.prev, arlist.prev, g, h, TRUE)$servers
+    for(h in 0:(hlen-1)) {
       
-      print(sprintf("Group: %s, hour: %i, servers: %i", g, h, est.servers))
+      lagvals = h:(h-lag) %% hlen + 1
+      hlabels = hours[lagvals]
+      hval = h+1
       
-      required.servers %<>% mutate(s = replace(s, group == g & hour == h, est.servers))
+      stlists = st.values %>% filter(wd == g & ts %in% hlabels) %>% select('values')
+      arlists = ar.values %>% filter(wd == g & ts %in% hlabels) %>% select('values')
+      est.servers = fitQueueModel(stlists, arlists, g, hval, TRUE)$servers
+      
+      print(sprintf("Group: %s, ts: %i, servers: %i", g, hval, est.servers))
+      
+      required.servers %<>% mutate(s = replace(s, group == g & ts == hlabels[1], est.servers))
     }
   }
   
- p = required.servers %>% mutate(hour2 = sprintf('%02d:00', hour)) %>%
-   ggplot(aes(x=hour2, y=s, group=group)) +
-     facet_wrap(. ~ group) +
-     geom_line() +
-     ylab('Estimated Number of Units') +
-     xlab('Hour of Day') +
-     theme(panel.border = element_blank(),
-           panel.background = element_blank(),
-           panel.grid.minor = element_line(colour = "grey90"),
-           panel.grid.major = element_line(colour = "grey90"),
-           panel.grid.major.x = element_line(colour = "grey90"),
-           axis.text = element_text(size = 10),
-           axis.text.x = element_text(angle = 45, hjust = 1, size=10),
-           axis.title = element_text(size = 12, face = "bold"),
-           strip.text = element_text(size = 12, face = "bold"))
- 
+  required.servers = required.servers %>% mutate(tp=as.integer(ts)) %>% arrange(group, tp)
+  tl = apply(required.servers, 1, 
+             function(r) {
+               wd=wday(as.integer(r['group']), label=T)
+               return(sprintf('%s %s', wd, r['ts']))
+             })
+  breakpoints = seq(1,length(tl),by=12)
+  p = required.servers %>% mutate(i=row_number()) %>% 
+    ggplot(aes(x=i, y=s)) +
+    geom_line() +
+    ylab('Estimated Number of Units') +
+    xlab('Time Period') +
+    scale_x_continuous(labels=tl[breakpoints], breaks=breakpoints) +
+    theme(panel.border = element_blank(),
+          panel.background = element_blank(),
+          panel.grid.minor = element_line(colour = "grey90"),
+          panel.grid.major = element_line(colour = "grey90"),
+          panel.grid.major.x = element_line(colour = "grey90"),
+          axis.text = element_text(size = 10),
+          axis.text.x = element_text(angle = 45, hjust = 1, size=10),
+          axis.title = element_text(size = 12, face = "bold"),
+          strip.text = element_text(size = 12, face = "bold"))
+  
   ggsave("data/interim/plot_required_crews.pdf", p, height=8.5, width=11)
-     
-    
+  
+  
+ 
   return(required.servers)
   
 }
 
-fitQueueModel <- function(st.list, ar.list, st.list.prev, ar.list.prev, group.label, hour, do.plots=TRUE) {
+fitQueueModel <- function(st.lists, ar.lists, group.label, hour, do.plots=TRUE) {
+  
+  st.list = unlist(st.lists)
+  ar.list = unlist(ar.lists)
   
   path = file.path('data/interim', group.label)
   if(do.plots) {
@@ -176,28 +185,13 @@ fitQueueModel <- function(st.list, ar.list, st.list.prev, ar.list.prev, group.la
   
   # Populate model
   lambda = ar.res$mean
-  lambda_prev = rate.summary(ar.list.prev)$mean
   mu = 1/st.mean
   
   rho = lambda/mu
   
-  # Adjust arrival rate? Service time?
-  
-  # Previous research indicated a difference of 20% would impact the current state performance
-  # Lots of different approaches for adjusting arrival rates to account for preexisting load in the queue
-  # LAG - use arrival rate for period shifted back by L units (average service time)
-  # Mix - In periods where rates are increasing, use existing rate, otherwise, use 1.2 average (avoids understaffing)
-  # Adaptive - If difference is > 20% between preceding and current, take average
-  
-  perc.change = (lambda_prev - lambda)/lambda
-  if(abs(perc.change) > .2) {
-    warning(sprintf("Significant change in arrival rate. Current Rate: %f, previous period rate: %f (%f change)", lambda, lambda_prev,
-                    perc.change))
-  }
-  
   # Search space
   # Lower bound
-  s.lowerbound = round(rho/.9) # Make sure utilization proportion is less than 1 to make this work
+  s.lowerbound = round(rho/.8) # Make sure utilization proportion is less than 1 to make this work
   
   pw = 1
   service.level = 0.001
@@ -213,12 +207,12 @@ fitQueueModel <- function(st.list, ar.list, st.list.prev, ar.list.prev, group.la
     
     # Plot queue performance for different number of servers
     mmcs = tibble(s=s.lowerbound:(s+5), lambda=lambda, mu=mu)
-    mmcs %<>% rowwise() %>% do(queue.performance(s=.$s, lambda=.$lambda, mu=.$mu))
+    mmcs %<>% rowwise() %>% do(queue_performance(s=.$s, lambda=.$lambda, mu=.$mu))
     
     plot.width=30
     
     p.prob = mmcs %>% 
-      ggplot(aes(x=s,y=C)) +
+      ggplot(aes(x=s,y=1-C)) +
       geom_line() +
       theme(panel.border = element_blank(),
             panel.background = element_blank(),
@@ -228,72 +222,72 @@ fitQueueModel <- function(st.list, ar.list, st.list.prev, ar.list.prev, group.la
             axis.text = element_text(size = 10),
             axis.title = element_text(size = 12, face = "bold"),
             strip.text = element_text(size = 12, face = "bold")) +
-      ggtitle(wrapper('Probability No Unit Available (Erlang C model)', plot.width)) +
+      ggtitle(wrapper('Probability Unit Available (Erlang C model)', plot.width)) +
       ylab('Probability') +
       xlab('Number of Units Staffed')
     
-    p.W = mmcs %>% 
-      ggplot(aes(x=s,y=W)) +
-      geom_line() +
-      theme(panel.border = element_blank(),
-            panel.background = element_blank(),
-            panel.grid.minor = element_line(colour = "grey90"),
-            panel.grid.major = element_line(colour = "grey90"),
-            panel.grid.major.x = element_line(colour = "grey90"),
-            axis.text = element_text(size = 10),
-            axis.title = element_text(size = 12, face = "bold"),
-            strip.text = element_text(size = 12, face = "bold")) +
-      ggtitle(wrapper('Estimated Event Time', plot.width)) +
-      ylab('Hours') +
-      xlab('Number of Units Staffed')
-    
-    p.Wq = mmcs %>% 
-      ggplot(aes(x=s,y=Wq)) +
-      geom_line() +
-      theme(panel.border = element_blank(),
-            panel.background = element_blank(),
-            panel.grid.minor = element_line(colour = "grey90"),
-            panel.grid.major = element_line(colour = "grey90"),
-            panel.grid.major.x = element_line(colour = "grey90"),
-            axis.text = element_text(size = 10),
-            axis.title = element_text(size = 12, face = "bold"),
-            strip.text = element_text(size = 12, face = "bold")) +
-      ggtitle(wrapper('Estimated Time Waiting for Available Unit', plot.width)) +
-      ylab('Hours') +
-      xlab('Number of Units Staffed')
-    
-    p.L = mmcs %>% 
-      ggplot(aes(x=s,y=L)) +
-      geom_line() +
-      theme(panel.border = element_blank(),
-            panel.background = element_blank(),
-            panel.grid.minor = element_line(colour = "grey90"),
-            panel.grid.major = element_line(colour = "grey90"),
-            panel.grid.major.x = element_line(colour = "grey90"),
-            axis.text = element_text(size = 10),
-            axis.title = element_text(size = 12, face = "bold"),
-            strip.text = element_text(size = 12, face = "bold")) +
-      ggtitle(wrapper('Estimated Number of Ongoing Events', plot.width)) +
-      ylab('Number of Events') +
-      xlab('Number of Units Staffed')
-    
-    p.Lq = mmcs %>% 
-      ggplot(aes(x=s,y=Lq)) +
-      geom_line() +
-      theme(panel.border = element_blank(),
-            panel.background = element_blank(),
-            panel.grid.minor = element_line(colour = "grey90"),
-            panel.grid.major = element_line(colour = "grey90"),
-            panel.grid.major.x = element_line(colour = "grey90"),
-            axis.text = element_text(size = 10),
-            axis.title = element_text(size = 12, face = "bold"),
-            strip.text = element_text(size = 12, face = "bold")) +
-      ggtitle(wrapper('Estimated Number of Events Waiting for Available Unit', plot.width)) +
-      ylab('Number of Events') +
-      xlab('Number of Units Staffed')
-    
-    p.full = grid.arrange(p.prob, p.W, p.Wq, p.L, p.Lq, ncol=3)
-    ggsave(file.path(path,paste0('plot_queue_model_performance__hour',hour,'.pdf')), plot=p.full, device='pdf', width=11, height=8.5)
+    # p.W = mmcs %>% 
+    #   ggplot(aes(x=s,y=W)) +
+    #   geom_line() +
+    #   theme(panel.border = element_blank(),
+    #         panel.background = element_blank(),
+    #         panel.grid.minor = element_line(colour = "grey90"),
+    #         panel.grid.major = element_line(colour = "grey90"),
+    #         panel.grid.major.x = element_line(colour = "grey90"),
+    #         axis.text = element_text(size = 10),
+    #         axis.title = element_text(size = 12, face = "bold"),
+    #         strip.text = element_text(size = 12, face = "bold")) +
+    #   ggtitle(wrapper('Estimated Event Time', plot.width)) +
+    #   ylab('Time Period') +
+    #   xlab('Number of Units Staffed')
+    # 
+    # p.Wq = mmcs %>% 
+    #   ggplot(aes(x=s,y=Wq)) +
+    #   geom_line() +
+    #   theme(panel.border = element_blank(),
+    #         panel.background = element_blank(),
+    #         panel.grid.minor = element_line(colour = "grey90"),
+    #         panel.grid.major = element_line(colour = "grey90"),
+    #         panel.grid.major.x = element_line(colour = "grey90"),
+    #         axis.text = element_text(size = 10),
+    #         axis.title = element_text(size = 12, face = "bold"),
+    #         strip.text = element_text(size = 12, face = "bold")) +
+    #   ggtitle(wrapper('Estimated Time Waiting for Available Unit', plot.width)) +
+    #   ylab('Time Period') +
+    #   xlab('Number of Units Staffed')
+    # 
+    # p.L = mmcs %>% 
+    #   ggplot(aes(x=s,y=L)) +
+    #   geom_line() +
+    #   theme(panel.border = element_blank(),
+    #         panel.background = element_blank(),
+    #         panel.grid.minor = element_line(colour = "grey90"),
+    #         panel.grid.major = element_line(colour = "grey90"),
+    #         panel.grid.major.x = element_line(colour = "grey90"),
+    #         axis.text = element_text(size = 10),
+    #         axis.title = element_text(size = 12, face = "bold"),
+    #         strip.text = element_text(size = 12, face = "bold")) +
+    #   ggtitle(wrapper('Estimated Number of Ongoing Events', plot.width)) +
+    #   ylab('Number of Events') +
+    #   xlab('Number of Units Staffed')
+    # 
+    # p.Lq = mmcs %>% 
+    #   ggplot(aes(x=s,y=Lq)) +
+    #   geom_line() +
+    #   theme(panel.border = element_blank(),
+    #         panel.background = element_blank(),
+    #         panel.grid.minor = element_line(colour = "grey90"),
+    #         panel.grid.major = element_line(colour = "grey90"),
+    #         panel.grid.major.x = element_line(colour = "grey90"),
+    #         axis.text = element_text(size = 10),
+    #         axis.title = element_text(size = 12, face = "bold"),
+    #         strip.text = element_text(size = 12, face = "bold")) +
+    #   ggtitle(wrapper('Estimated Number of Events Waiting for Available Unit', plot.width)) +
+    #   ylab('Number of Events') +
+    #   xlab('Number of Units Staffed')
+    # 
+    # p.full = grid.arrange(p.prob, p.W, p.Wq, p.L, p.Lq, ncol=3)
+    ggsave(file.path(path,paste0('plot_queue_model_performance__hour',hour,'.pdf')), plot=p.prob, device='pdf', width=11, height=8.5)
     
   }
   
@@ -325,7 +319,7 @@ erlang_c_wait_probability <- function(s,rho) {
   return(prob.wait)
 }
 
-queue.performance <- function(s,lambda,mu) {
+queue_performance <- function(s,lambda,mu) {
   params.mmc = NewInput.MMC(lambda = lambda, mu = mu , n=1, method = 0 , c=s)
   mmc=QueueingModel(params.mmc)
   
@@ -335,7 +329,7 @@ queue.performance <- function(s,lambda,mu) {
   return(data.frame(s=s, C=C, B=B, Lq=mmc$Lq, L=mmc$L, W=mmc$W, Wq=mmc$Wq, P0=mmc$Pn[1]))
 }
 
-rate.summary <- function(l) {
+rate_summary <- function(l) {
   return(list("mean"=mean(l), "sd"=sd(l), 
               "p50"=quantile(l,.5), "p90"=quantile(l,.9)))
 }
