@@ -181,10 +181,12 @@ fitQueueModel <- function(st.lists, ar.lists, group.label, hour, do.plots=TRUE) 
     dev.off()
   }
   
-  ar.res = rate.summary(ar.list)
+  ar.res = rate_summary(ar.list)
+  st.mean = mean(st.list)
   
   # Populate model
   lambda = ar.res$mean
+ 
   mu = 1/st.mean
   
   rho = lambda/mu

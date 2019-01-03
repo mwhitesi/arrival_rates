@@ -82,6 +82,80 @@ demandTarget <- function(datetimes, duration.in.min=15) {
   
   return(window.counts)
 }
+
+
+utilizationTarget <- function(window.counts, required.servers, st, ar, duration.in.min=15) {
+  
+  window.counts %<>% arrange(window)
+  
+  # Iterate over each week
+  d = weeklyUtilization(window.counts, required.servers)
+  
+  d %>% mutate(daily.mean=rollmean(x=uz,48,fill=NA),
+               weekly.mean=rollmean(x=uz,672,fill=NA),
+               monthly.mean=rollmean(x=uz,672*4,fill=NA)) %>%
+    na.omit() %>%
+  ggplot(aes(window)) +
+    geom_line(aes(y=daily.mean), color='black', alpha=.8) +
+    geom_line(aes(y=weekly.mean), color='black') +
+    geom_line(aes(y=monthly.mean), color='red') +
+    ylab("Mean Utilization") +
+    xlab("Timestamp") +
+    theme(panel.border = element_blank(),
+          panel.background = element_blank(),
+          panel.grid.minor = element_line(colour = "grey90"),
+          panel.grid.major = element_line(colour = "grey90"),
+          panel.grid.major.x = element_line(colour = "grey90"),
+          axis.text.x = element_text(angle = 45, hjust = 1, size=10),
+          axis.title = element_text(size = 12, face = "bold"),
+          strip.text = element_text(size = 12, face = "bold"))
+  
+  
+  # window.counts %<>% arrange(window)
+  # st.counts = dplyr::left_join(st, window.counts, by=c('start'='window')) 
+  # st.counts %>% mutate(bin=cut(count,12)) %>% 
+  #   group_by(bin) %>% filter(n() > 10) %>% dplyr::summarise(mean=mean(interval_length), 
+  #                                                           se = 1.96*(sd(interval_length, na.rm=T)/sqrt(n()))) %>%
+  #   ggplot(aes(x=bin, y=mean)) +
+  #   geom_point() +
+  #   geom_line() +
+  #   geom_errorbar(aes(x=bin, ymin=mean-se, ymax=mean+se)) +
+  #   ylab("Mean Service Time (s)")+
+  #   xlab("N Concurrent Units")+
+  #   theme(panel.border = element_blank(),
+  #         panel.background = element_blank(),
+  #         panel.grid.minor = element_line(colour = "grey90"),
+  #         panel.grid.major = element_line(colour = "grey90"),
+  #         panel.grid.major.x = element_line(colour = "grey90"),
+  #         axis.text.x = element_text(angle = 45, hjust = 1, size=10),
+  #         axis.title = element_text(size = 12, face = "bold"),
+  #         strip.text = element_text(size = 12, face = "bold"))
+  # 
+  # 
+  # increasing.windows = window.counts %>% filter
+  
+  
+  
+}
+
+weeklyUtilization <- function(weekly.demand, required.servers) {
+  
+  d = weekly.demand %>% mutate(wd=wday(window), ts=strftime(window, format="%H:%M", tz="UTC")) %>%
+    rowwise() %>%
+    mutate(estimate = required.servers$s[wd == required.servers$group & ts == required.servers$ts])
+  
+  d %<>% mutate(uz=count/estimate)
+  
+  d %<>% ungroup()
+  
+  # d %>% 
+  #   ggplot(aes(x=window)) +
+  #   geom_line(aes(y=count), color='black') +
+  #   geom_line(aes(y=estimate), color='red')
+  
+  return(d)
+}
+
   
   
   

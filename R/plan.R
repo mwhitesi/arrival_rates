@@ -42,7 +42,7 @@ shift.setup <- list(
 )
 solver <- 'glpk'
 shifts_plan <- drake_plan(
-  shifts = optimumTarget(servs, shift.setup, solver)
+  crews = optimumTarget(servs, shift.setup, solver)
   
 )
 

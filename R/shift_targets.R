@@ -43,7 +43,7 @@ optimumTarget <- function(required.servers, shift.setup, solver="glpk") {
   
   # Start time constraint
   max_starts = 2
-  optm = add_constraint(optm, sum_expr(*x[i]))
+  #optm = add_constraint(optm, sum_expr(*x[i]))
   
   
   
