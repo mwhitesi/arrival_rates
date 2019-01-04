@@ -89,14 +89,14 @@ utilizationTarget <- function(window.counts, required.servers, st, ar, duration.
   window.counts %<>% arrange(window)
   
   # Iterate over each week
-  d = weeklyUtilization(window.counts, required.servers)
+  d = calcUtilization(window.counts, required.servers)
   
   d %>% mutate(daily.mean=rollmean(x=uz,48,fill=NA),
                weekly.mean=rollmean(x=uz,672,fill=NA),
                monthly.mean=rollmean(x=uz,672*4,fill=NA)) %>%
     na.omit() %>%
   ggplot(aes(window)) +
-    geom_line(aes(y=daily.mean), color='black', alpha=.8) +
+    geom_line(aes(y=daily.mean), color='grey40', alpha=.8) +
     geom_line(aes(y=weekly.mean), color='black') +
     geom_line(aes(y=monthly.mean), color='red') +
     ylab("Mean Utilization") +
@@ -134,15 +134,21 @@ utilizationTarget <- function(window.counts, required.servers, st, ar, duration.
   # 
   # increasing.windows = window.counts %>% filter
   
-  
+  utilizationSummary(d)
   
 }
 
-weeklyUtilization <- function(weekly.demand, required.servers) {
+calcUtilization <- function(weekly.demand, required.servers) {
+  
   
   d = weekly.demand %>% mutate(wd=wday(window), ts=strftime(window, format="%H:%M", tz="UTC")) %>%
     rowwise() %>%
     mutate(estimate = required.servers$s[wd == required.servers$group & ts == required.servers$ts])
+  
+  # Drop first and last day, since first few periods will not count preceding/post events that extend beyond analysis
+  firstday = min(d$window)
+  lastday = max(d$window)
+  d %<>% filter(date(window) != date(firstday) & date(window) != date(lastday))
   
   d %<>% mutate(uz=count/estimate)
   
@@ -154,6 +160,55 @@ weeklyUtilization <- function(weekly.demand, required.servers) {
   #   geom_line(aes(y=estimate), color='red')
   
   return(d)
+}
+
+utilizationSummary <-function(d) {
+  uz = d %>% pull(uz)
+  
+  res = list(
+    max=max(uz),
+    min=min(uz),
+    median=median(uz),
+    p50=quantile(uz,.5),
+    p90=quantile(uz,.9),
+    mean=mean(uz),
+    sd=sd(uz),
+    overcapacity.periods=sum(uz > 1),
+    undercapacity.periods=sum(uz < .5)
+  )
+  
+  return(res)
+}
+
+weeklyUtilization <- function(d) {
+  
+  tbl = d %>% group_by(weekly.bin, daily.bin) %>% dplyr::summarise(mean=mean(uz)) %>% ungroup() %>%
+    mutate(id=1:n())
+  tl = apply(tbl, 1, 
+             function(r) {
+               wd=wday(as.integer(r["weekly.bin"]), label=T)
+               hr=seconds_to_period(as.integer((r["daily.bin"]))*duration.in.min*60)
+               return(sprintf('%s %02d:%02d', wd, hour(hr), minute(hr)))
+             })
+  breakpoints <- seq(1, length(tl), 12)
+  
+  tbl %>%
+    ggplot(aes(x=id, y=mean)) +
+    geom_line() +
+    scale_x_continuous(labels=tl[breakpoints], breaks=breakpoints)+
+    ylab("Average Utilization")+
+    xlab("Time Period")+
+    theme(panel.border = element_blank(),
+          panel.background = element_blank(),
+          panel.grid.minor = element_line(colour = "grey90"),
+          panel.grid.major = element_line(colour = "grey90"),
+          panel.grid.major.x = element_line(colour = "grey90"),
+          axis.text.x = element_text(angle = 45, hjust = 1, size=10),
+          axis.title = element_text(size = 12, face = "bold"),
+          strip.text = element_text(size = 12, face = "bold"))
+ 
+  
+  
 }
 
   
