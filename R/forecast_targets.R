@@ -65,16 +65,14 @@ trendsTarget <- function(ar, st) {
   
 }
 
-
-
-
-modelTarget <- function(ar, st, duration.in.min=15) {
+modelTarget <- function(ar, st, duration.in.min=15, ar.lag=NULL, st.lag=NULL, load.threshold=0, do.plot=TRUE) {
   
   st.911 = st
   ar.911 = ar
   
-  # Talking hours here
-  st.911 = st.911 %>% mutate(service.time=interval_length/60/duration.in.min)
+  # Convert to minutes
+  st.911 = st.911 %>% mutate(service.time=interval_length/60)
+  ar.911 = ar.911 %>% mutate(arrival_rate=arrival_rate/duration.in.min)
   
   # Aggregate
   ar.values = ar.911 %>% group_by(wd,ts) %>% summarise(values=list(arrival_rate))
@@ -91,61 +89,74 @@ modelTarget <- function(ar, st, duration.in.min=15) {
   names(required.servers) = c('group','ts','s')
   
   # Averge Lag
-  #lag=round(mean(st.911$service.time))-1
-  lag=1
+  if(is.null(ar.lag)) {
+    ar.lag=round(mean(st.911$service.time)/duration.in.min)-1
+  }
+  if(is.null(st.lag)) {
+    st.lag=round(mean(st.911$service.time)/duration.in.min)-1
+  }
+  
+  #lag=1
   
   for(g in groups) {
     for(h in 0:(hlen-1)) {
       
-      lagvals = h:(h-lag) %% hlen + 1
-      hlabels = hours[lagvals]
+      ar.lagvals = h:(h-ar.lag) %% hlen + 1
+      ar.hlabels = hours[ar.lagvals]
+      st.lagvals = h:(h-st.lag) %% hlen + 1
+      st.hlabels = hours[st.lagvals]
       hval = h+1
       
-      stlists = st.values %>% filter(wd == g & ts %in% hlabels) %>% select('values')
-      arlists = ar.values %>% filter(wd == g & ts %in% hlabels) %>% select('values')
-      est.servers = fitQueueModel(stlists, arlists, g, hval, TRUE)$servers
+      stlists = st.values %>% filter(wd == g & ts %in% st.hlabels) %>% select('values')
+      arlists = ar.values %>% filter(wd == g & ts %in% ar.hlabels) %>% select('values')
+      est.servers = fitQueueModel(stlists, arlists, g, hval, load.threshold, do.plot)$servers
       
       print(sprintf("Group: %s, ts: %i, servers: %i", g, hval, est.servers))
       
-      required.servers %<>% mutate(s = replace(s, group == g & ts == hlabels[1], est.servers))
+      required.servers %<>% mutate(s = replace(s, group == g & ts == ar.hlabels[1], est.servers))
     }
   }
   
   required.servers = required.servers %>% mutate(tp=as.integer(ts)) %>% arrange(group, tp)
-  tl = apply(required.servers, 1, 
-             function(r) {
-               wd=wday(as.integer(r['group']), label=T)
-               return(sprintf('%s %s', wd, r['ts']))
-             })
-  breakpoints = seq(1,length(tl),by=12)
-  p = required.servers %>% mutate(i=row_number()) %>% 
-    ggplot(aes(x=i, y=s)) +
-    geom_line() +
-    ylab('Estimated Number of Units') +
-    xlab('Time Period') +
-    scale_x_continuous(labels=tl[breakpoints], breaks=breakpoints) +
-    theme(panel.border = element_blank(),
-          panel.background = element_blank(),
-          panel.grid.minor = element_line(colour = "grey90"),
-          panel.grid.major = element_line(colour = "grey90"),
-          panel.grid.major.x = element_line(colour = "grey90"),
-          axis.text = element_text(size = 10),
-          axis.text.x = element_text(angle = 45, hjust = 1, size=10),
-          axis.title = element_text(size = 12, face = "bold"),
-          strip.text = element_text(size = 12, face = "bold"))
   
-  ggsave("data/interim/plot_required_crews.pdf", p, height=8.5, width=11)
+  if(do.plot) {
+    tl = apply(required.servers, 1, 
+               function(r) {
+                 wd=wday(as.integer(r['group']), label=T)
+                 return(sprintf('%s %s', wd, r['ts']))
+               })
+    breakpoints = seq(1,length(tl),by=12)
+    p = required.servers %>% mutate(i=row_number()) %>% 
+      ggplot(aes(x=i, y=s)) +
+      geom_line() +
+      ylab('Estimated Number of Units') +
+      xlab('Time Period') +
+      scale_x_continuous(labels=tl[breakpoints], breaks=breakpoints) +
+      theme(panel.border = element_blank(),
+            panel.background = element_blank(),
+            panel.grid.minor = element_line(colour = "grey90"),
+            panel.grid.major = element_line(colour = "grey90"),
+            panel.grid.major.x = element_line(colour = "grey90"),
+            axis.text = element_text(size = 10),
+            axis.text.x = element_text(angle = 45, hjust = 1, size=10),
+            axis.title = element_text(size = 12, face = "bold"),
+            strip.text = element_text(size = 12, face = "bold"))
+    
+    ggsave("data/interim/plot_required_crews.pdf", p, height=8.5, width=11)
+  }
   
-  
- 
   return(required.servers)
   
 }
 
-fitQueueModel <- function(st.lists, ar.lists, group.label, hour, do.plots=TRUE) {
+fitQueueModel <- function(st.lists, ar.lists, group.label, hour, load.threshold, do.plots=TRUE) {
   
   st.list = unlist(st.lists)
   ar.list = unlist(ar.lists)
+  
+  st.sd = var(st.list)
+  st.mean = mean(st.list)
+  scv.service = (st.sd/st.mean)^2
   
   path = file.path('data/interim', group.label)
   if(do.plots) {
@@ -160,9 +171,6 @@ fitQueueModel <- function(st.lists, ar.lists, group.label, hour, do.plots=TRUE) 
 
     # squared coefficient of variation for service time should be < 2, for exponential distribution to be appropriate
     # See Green et al, Coping with Time-Varying Demand When Setting Staffing Requirements for a Service System, 2007
-    st.sd = var(st.list)
-    st.mean = mean(st.list)
-    scv.service = st.sd/st.mean^2
     scv.result = sprintf("Squared coefficent of variation is indicator\nof suitability of exp distn for service time\n Is SCV less than 2?\n\t%s (%f)", 
                          ifelse(scv.service, "Yes", "No"), scv.service)
     gof.result = capture.output(print(gofstat(list(fit_exp, fit_ln, fit_gamma))))
@@ -190,6 +198,7 @@ fitQueueModel <- function(st.lists, ar.lists, group.label, hour, do.plots=TRUE) 
   mu = 1/st.mean
   
   rho = lambda/mu
+  rho.fast = rho/1.05
   
   # Search space
   # Lower bound
@@ -202,6 +211,18 @@ fitQueueModel <- function(st.lists, ar.lists, group.label, hour, do.plots=TRUE) 
   while(pw > service.level) {
     s=s+1
     pw = erlang_c_wait_probability(s,rho)
+  }
+  
+  # Try again with faster service times reflecting low system load
+  if(s < load.threshold) {
+    pw = pa = 1
+    service.level = 0.001
+    s=s.lowerbound
+    pw = erlang_c_wait_probability(s,rho.fast)
+    while(pw > service.level) {
+      s=s+1
+      pw = erlang_c_wait_probability(s,rho.fast)
+    }
   }
   
   
@@ -361,4 +382,32 @@ plotLongTermRollingTrend <- function(rt, ylab="Arrival Rate", b=168) {
     labs(x = "Date", y = "Weekly Arrival Rate")
 }
 
+
+regressionTarget <- function(d, duration.in.min=15, do.plot=TRUE) {
+  
+  setkey(hd, window)
+  
+  # Start and end on sunday
+  startday = min(hd[weekly.bin == 1,window])
+  endday = max(hd[weekly.bin == 7,window])
+  d = hd[window >= startday & window <= endday]
+  
+  # Fill in empty values
+  dur.m = paste(duration.in.min, "min")
+  periods = seq(from=startday,to=endday,by=dur.m)
+  empty = data.table(window=periods, count=0)
+  setkey(empty, window)
+  d2 = empty[d][, count:=ifelse(is.na(i.count), count, i.count)]
+
+  # Create time series object
+  # the seasonalities that we are interested are sub-weekly (trying to only fit one week)
+  y = ts(d2[,count], frequency = 168*60/duration.in.min)
+  
+  # Use AICc to find the optimal number of fast-fourier terms to model seasonality
+  fit <- auto.arima(y, xreg = fourier(y, K = 3), seasonal = FALSE, lambda = 0)
+  
+  # Lots of uncaptured patterns/correlation in data, but at least residuals are centered around 0
+  # checkresiduals(fit)
+  
+}
 

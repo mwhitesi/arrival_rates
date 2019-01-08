@@ -21,15 +21,17 @@ analysis_plan <- drake_plan(
   
 )
 
-# historical_targets.R
-historical_plan <- drake_plan(
-  hd = demandTarget(dt1)
-)
+
 
 # forecast_targets.R
 forecast_plan <- drake_plan(
   st_pvals = trendsTarget(ar2, st2),
   servs = modelTarget(ar2, st2)
+)
+
+# historical_targets.R
+historical_plan <- drake_plan(
+  hd = demandTarget(dt1)
 )
 
 # shift_targets.R
