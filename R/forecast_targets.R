@@ -401,13 +401,33 @@ regressionTarget <- function(d, duration.in.min=15, do.plot=TRUE) {
 
   # Create time series object
   # the seasonalities that we are interested are sub-weekly (trying to only fit one week)
-  y = ts(d2[,count], frequency = 168*60/duration.in.min)
+  hourly=60/duration.in.min
+  yms = msts(d2[,count], seasonal.periods = c(24*hourly, 168*hourly))
   
   # Use AICc to find the optimal number of fast-fourier terms to model seasonality
-  fit <- auto.arima(y, xreg = fourier(y, K = 3), seasonal = FALSE, lambda = 0)
+  # Num of fourier terms were selected using AICc
+  fit <- tslm(yms ~ fourier(yms, K = c(7,6)))
   
-  # Lots of uncaptured patterns/correlation in data, but at least residuals are centered around 0
+  # Lots of uncaptured patterns/correlation in residuals, but at least residuals are centered around 0
+  # normality is plasuible - slight fat tails
+  # Not sure how this affects a fourier model
   # checkresiduals(fit)
+  # qqnorm(residuals(fit))
+  # qqline(residuals(fit))
   
+  pred <- forecast(fit, 
+                   data.frame(fourier(yms, K = c(7,6), h=168*60/duration.in.min)),
+                   level=c(99.5))
+  
+  date.range = as.POSIXct(startday) + as.numeric(time(pred$upper))*7*24*60*60
+  starts = addTimeColumns(data.table(start=date.range))
+  
+  reqd = data.table(starts, pred$upper)
+  names(reqd) = c("start", "weekday", "ts", "group", "s")
+  
+  reqd = reqd[,.(group,ts,s)]
+  
+  
+  return(reqd)
 }
 
