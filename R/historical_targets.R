@@ -146,8 +146,44 @@ utilizationTarget <- function(window.counts, required.servers, duration.in.min=1
   return(s)
 }
 
-calcUtilization <- function(weekly.demand, required.servers) {
+errorSummary <- function(d) {
   
+  e = list(
+    'rmse'=rmse(d$count, d$estimate),
+    'asym.rmse'=asymmetricRMSE(d$count, d$estimate, .25)
+  )
+  
+  return(e)
+}
+
+asymmetricLoss <- function(actual, predicted, gamma=0.5) {
+  w = ifelse((actual-predicted)<0, 1-gamma, gamma)
+  aae = w*ae(actual-predicted)
+  
+  return(aae)
+}
+
+asymmetricQuadraticLoss <- function(actual, predicted, gamma=0.5) {
+  w = ifelse((actual-predicted)<0, 1-gamma, gamma)
+  ase = w*se(actual,predicted)
+  
+  return(ase)
+}
+
+asymmetricMSE <- function(actual, predicted, gamma=0.5) {
+  return(mean(asymmetricQuadraticLoss(actual, predicted, gamma)))
+}
+
+asymmetricMAE <- function(actual, predicted, gamma=0.5) {
+  return(mean(asymmetricLoss(actual, predicted, gamma)))
+}
+
+asymmetricRMSE <- function(actual, predicted, gamma=0.5) {
+  return(sqrt(asymmetricMSE(actual, predicted, gamma)))
+}
+  
+
+calcUtilization <- function(weekly.demand, required.servers) {
   
   d = weekly.demand %>% mutate(wd=wday(window), ts=strftime(window, format="%H:%M", tz="UTC")) %>%
     rowwise() %>%
