@@ -13,14 +13,14 @@ shifts$shift_options <- function(shift.types, period.stagger=15, period.days=7, 
   
   sfts = list()
   sft.info = list()
-  i=1
-  for(s in shift.types) {
+  i = 1
+  for (s in shift.types) {
    
     tmp = shifts$encode_shift(s, period.stagger=period.stagger, period.days=period.days, daily.sc.window=daily.sc.window)
 
     sfts[[i]] = tmp$shifts
     sft.info[[i]] = tmp$shift.info
-    i = i+1
+    i = i + 1
   }
   
   sfts = do.call(rbind, sfts)
@@ -33,19 +33,31 @@ shifts$shift_options <- function(shift.types, period.stagger=15, period.days=7, 
 shifts$encode_shift <- function(shift.type, period.stagger=15, period.days=7, daily.sc.window) {
   
   switch(shift.type,
-         'week_247'={
+         'week_247' = {
            sfts = shifts$encode_247(period.stagger, period.days, daily.sc.window)
          },
-         'week_12hr'={
+         'week_12hr' = {
            sfts = shifts$encode_week(12*60, period.stagger, period.days, daily.sc.window)
          },
-         '4day_10.5hr'={
+         '4day_10.5hr' = {
            sfts = shifts$encode_contiguous_days(10.5*60, 4, period.stagger, period.days, daily.sc.window)
          },
-         '12hr'={
+         '4day_12hr' = {
+           sfts = shifts$encode_contiguous_days(12*60, 4, period.stagger, period.days, daily.sc.window)
+         },
+         '2day_10.5hr' = {
+           sfts = shifts$encode_contiguous_days(10.5*60, 2, period.stagger, period.days, daily.sc.window)
+         },
+         '2day_12hr' = {
+           sfts = shifts$encode_contiguous_days(12*60, 2, period.stagger, period.days, daily.sc.window)
+         },
+         '10.5hr' = {
+           sfts = shifts$encode_contiguous_days(10.5*60, 1, period.stagger, period.days, daily.sc.window)
+         },
+         '12hr' = {
            sfts = shifts$encode_contiguous_days(12*60, 1, period.stagger, period.days, daily.sc.window)
          },
-         '10.5hr'={
+         '10.5hr' = {
            sfts = shifts$encode_contiguous_days(10.5*60, 1, period.stagger, period.days, daily.sc.window)
          },
          stop('Unrecognized shift type')
@@ -72,12 +84,12 @@ shifts$possible_period_starts <- function(period.stagger, period.days, daily.sc.
   
   starts = rep(0, l*period.days)
   
-  for(d in 1:period.days) {
-    i = d-1
+  for (d in 1:period.days) {
+    i = d - 1
     j = i * l + 1
     k = j + l - 1
     
-    starts[j:k] = daily+i*daily.shift
+    starts[j:k] = daily + i*daily.shift
   }
   
   return(starts)
@@ -89,7 +101,7 @@ shifts$encode_247 <- function(period.stagger=15, period.days=7, daily.sc.window=
   
   starts = shifts$possible_daily_starts(period.stagger, daily.sc.window)
   nshifts = length(starts)
-  sfts = matrix(1,ncol=nperiods,nrow=nshifts)
+  sfts = matrix(1, ncol=nperiods, nrow=nshifts)
   colnames(sfts) <- seq(1,nperiods)
   
   return(list(shifts=sfts, start=starts, cost=rep(24*period.days, nshifts)))

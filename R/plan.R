@@ -37,7 +37,7 @@ historical_plan <- drake_plan(
 # shift_targets.R
 # Allowable shift types
 shift.setup <- list(
-  shift.types = c('week_247', 'week_12hr', '4day_10.5hr'),
+  shift.types = c('week_247', 'week_12hr', '4day_12hr', '4day_10.5hr', '2day_12hr', '2day_10.5hr'),
   period.stagger = 15,
   period.days = 7,
   daily.sc.window = c(5*60,20*60)

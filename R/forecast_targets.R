@@ -11,12 +11,12 @@ trendsTarget <- function(ar, st) {
   ar.911 = ar
   
   # Compare days
-  st.daily = st.911 %>% group_by(weekday) %>% summarise(values=list(interval_length/60))
+  st.daily = st.911 %>% group_by(weekday) %>% summarise(values = list(interval_length/60))
   st.showdown = st.daily %>% expand(weekday, weekday) %>% dplyr::inner_join(st.daily, by="weekday") %>% 
     dplyr::inner_join(st.daily,by = c("weekday1" = "weekday")) %>% filter(weekday != weekday1)
   
   st.showdown = st.showdown %>% rowwise() %>% mutate(ks=ks.test(values.x, values.y)$p.value) %>% 
-    mutate(kolmogorov.smirnov=ks.test(values.x, values.y)$p.value) %>%
+    mutate(kolmogorov.smirnov = ks.test(values.x, values.y)$p.value) %>%
     mutate(t.test=t.test(values.x, values.y)$p.value) %>%
     mutate(mann.whitney=wilcox.test(values.x, values.y)$p.value)
   
@@ -408,6 +408,7 @@ regressionTarget <- function(d, duration.in.min=15, do.plot=TRUE) {
   # Num of fourier terms were selected using AICc
   fit <- tslm(yms ~ fourier(yms, K = c(7,6)))
   
+
   # Lots of uncaptured patterns/correlation in residuals, but at least residuals are centered around 0
   # normality is plasuible - slight fat tails
   # Not sure how this affects a fourier model
