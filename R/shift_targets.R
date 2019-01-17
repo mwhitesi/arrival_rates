@@ -10,8 +10,8 @@ optimumTarget <- function(required.servers, shift.setup, solver="glpk") {
   sfts = shifts$shift_options(shift.setup$shift.types, shift.setup$period.stagger, shift.setup$period.days,
                               shift.setup$daily.sc.window)
   a = sfts$shifts
-  c = sfts$shift.info[,cost]
-  s = sfts$shift.info[,start]
+  c = sfts$cost
+  s = sfts$changeover
   
   # Requirements
   # Convert from weekday/weekend format to weekly matrix

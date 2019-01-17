@@ -12,21 +12,27 @@ shifts$shift_options <- function(shift.types, period.stagger=15, period.days=7, 
   # Build matrix of possible shift arrangements and the daily periods that each shift covers
   
   sfts = list()
-  sft.info = list()
+  changeovers = list()
+  costs = list()
+  types = list()
+  
   i = 1
   for (s in shift.types) {
    
     tmp = shifts$encode_shift(s, period.stagger=period.stagger, period.days=period.days, daily.sc.window=daily.sc.window)
 
     sfts[[i]] = tmp$shifts
-    sft.info[[i]] = tmp$shift.info
+    changeovers[[i]] = tmp$changeover
+    costs[[i]] = tmp$cost
+    types[[i]] = tmp$type 
+      
     i = i + 1
   }
   
-  sfts = do.call(rbind, sfts)
-  sft.info = rbindlist(sft.info)
-  
-  return(list(shifts=sfts, shift.info=sft.info))
+  return(list(shifts=do.call(rbind, sfts), 
+              changeovers=do.call(rbind, changeovers),
+              costs=unlist(costs),
+              types=unlist(types)))
   
 }
 
@@ -63,12 +69,7 @@ shifts$encode_shift <- function(shift.type, period.stagger=15, period.days=7, da
          stop('Unrecognized shift type')
   )
   
-  sft.info = data.table(start=sfts$start, cost=sfts$cost)
-  sft.info[,`:=`(type=shift.type)]
-  
-  #print(sft.info)
-  
-  return(list(shifts=sfts$shifts, shift.info=sft.info))
+  return(list(shifts=sfts$shifts, changeover=sfts$changeover, cost=sfts$cost, type=rep(shift.type, length(sfts$cost))))
 }
 
 shifts$possible_daily_starts <- function(period.stagger, daily.sc.window) {
@@ -76,35 +77,52 @@ shifts$possible_daily_starts <- function(period.stagger, daily.sc.window) {
   return(seq(ceiling(daily.sc.window[1]/period.stagger), ceiling(daily.sc.window[2]/period.stagger)))
 }
 
-shifts$possible_period_starts <- function(period.stagger, period.days, daily.sc.window) {
-  
+shifts$possible_period_sc <- function(period.stagger, period.days, daily.sc.window, shift.duration) {
+
   daily = shifts$possible_daily_starts(period.stagger, daily.sc.window)
   daily.shift = 24*60/period.stagger
+  max.period = daily.shift * period.days
+  shift.periods = shift.duration/period.stagger
   l = length(daily)
   
   starts = rep(0, l*period.days)
+  ends = rep(0, l*period.days)
   
   for (d in 1:period.days) {
     i = d - 1
     j = i * l + 1
     k = j + l - 1
     
-    starts[j:k] = daily + i*daily.shift
+    s = daily + i*daily.shift
+    e = sapply(s, function(i) ifelse(i + shift.periods > max.period, (i + shift.periods) %% max.period, i + shift.periods))
+    
+    starts[j:k] = s
+    ends[j:k] = e
+    
   }
   
-  return(starts)
+  return(list(start=starts, end=ends))
 }
 
 shifts$encode_247 <- function(period.stagger=15, period.days=7, daily.sc.window=c(1,1440)) {
-  # 24/7 shift
+  # 24/7 shift - in reality two 12 hour shifts running continuously
+  
   nperiods = 24*60*period.days/period.stagger
   
-  starts = shifts$possible_daily_starts(period.stagger, daily.sc.window)
-  nshifts = length(starts)
-  sfts = matrix(1, ncol=nperiods, nrow=nshifts)
-  colnames(sfts) <- seq(1,nperiods)
+  daily.starts = shifts$possible_daily_starts(period.stagger, daily.sc.window)
+  nshifts = length(daily.starts)
+  sfts = changeovers = matrix(1, ncol=nperiods, nrow=nshifts)
+ 
+  sc = shifts$possible_period_sc(period.stagger, period.days, daily.sc.window, 12*60)
+  idx1 = matrix(c(1:nshifts, sc$starts), byrow=FALSE, ncol=2)
+  idx2 = matrix(c(1:nshifts, sc$ends), byrow=FALSE, ncol=2)
+  changeovers[idx] = changeovers[idx] + 2  # 2 Units swapping
+  changeovers[idx] = changeovers[idx] + 2   # 2 Units swapping
   
-  return(list(shifts=sfts, start=starts, cost=rep(24*period.days, nshifts)))
+  colnames(sfts) <- seq(1,nperiods)
+  colnames(changeovers) <- seq(1,nperiods)
+  
+  return(list(shifts=sfts, changeover=changeovers, cost=rep(24*period.days, nshifts)))
 }
 
 shifts$encode_week <- function(sft.len, period.stagger=15, period.days=7, daily.sc.window=c(1,1440)) {
@@ -115,21 +133,22 @@ shifts$encode_week <- function(sft.len, period.stagger=15, period.days=7, daily.
   sft.periods = shifts$possible_daily_starts(period.stagger, daily.sc.window)
   day.stagger = 24*60/period.stagger
   
-  sfts = matrix(0, ncol=nperiods, nrow=length(sft.periods))
+  nshifts = length(sft.periods)
+  sfts = changeovers = matrix(0, ncol=nperiods, nrow=nshifts)
   
-  for(i in 1:length(sft.periods)) {
+  for (i in 1:nshifts) {
     p = sft.periods[i]
     
-    for(d in 0:(period.days-1)) {
-      start = p+(d*day.stagger)
+    for (d in 0:(period.days - 1)) {
+      start = p + (d*day.stagger)
       
-      if(start > nperiods) {
+      if (start > nperiods) {
         start = start %% nperiods
       }
       
-      end = start+period.len-1
+      end = start + period.len - 1
       
-      if(end > nperiods) {
+      if (end > nperiods) {
         end2 = end %% nperiods
         sfts[i, 1:end2] = 1
         end = nperiods
@@ -140,10 +159,14 @@ shifts$encode_week <- function(sft.len, period.stagger=15, period.days=7, daily.
 
   }
   
-  colnames(sfts) <- seq(1,nperiods)
-  starts=sft.periods
+  sc = shifts$possible_period_sc(period.stagger, period.days, daily.sc.window, 12*60)
+  changeovers[1:nshifts, sc$starts] = changeovers[1:nshifts, sc$starts] + 1
+  changeovers[1:nshifts, sc$ends] = changeovers[1:nshifts, sc$ends] + 1
   
-  return(list(shifts=sfts, start=starts, cost=rep(12*period.days,length(starts))))
+  colnames(sfts) <- seq(1,nperiods)
+  colnames(changeovers) <- seq(1,nperiods)
+  
+  return(list(shifts=sfts, changeover=changeovers, cost=rep(12*period.days,nshifts)))
 }
 
 shifts$encode_contiguous_days <- function(sft.len, sft.days, period.stagger=15, period.days=7, daily.sc.window=c(1,1440)) {
@@ -152,27 +175,28 @@ shifts$encode_contiguous_days <- function(sft.len, sft.days, period.stagger=15, 
   stopifnot(sft.days < period.days)
 
   nperiods = 24*60*period.days/period.stagger
-  period.len = sft.len / period.stagger
-  sc = daily.sc.window[1]%/%period.stagger
+  sft.nperiods = sft.len / period.stagger
  
-  sft.periods = shifts$possible_period_starts(period.stagger, period.days, daily.sc.window)
+  possible.sfts = shifts$possible_period_sc(period.stagger, period.days, daily.sc.window, sft.len)
+ 
+  nshifts = length(possible.sfts[['start']])
   day.stagger = 24*60/period.stagger
   
-  sfts = matrix(0, ncol=nperiods, nrow=length(sft.periods))
+  sfts = changeovers = matrix(0, ncol=nperiods, nrow=nshifts)
 
-  for(i in 1:length(sft.periods)) {
-    p = sft.periods[i]
+  for (i in 1:nshifts) {
+    p = possible.sfts$start[i]
     
-    for(d in 0:(sft.days-1)) {
-      start = p+(d*day.stagger)
+    for (d in 0:(sft.days - 1)) {
+      start = p + (d*day.stagger)
       
-      if(start > nperiods) {
+      if (start > nperiods) {
         start = start %% nperiods
       }
       
-      end = start+period.len-1
+      end = start + sft.nperiods - 1
 
-      if(end > nperiods) {
+      if (end > nperiods) {
         end2 = end %% nperiods
         sfts[i, 1:end2] = 1
         end = nperiods
@@ -182,10 +206,14 @@ shifts$encode_contiguous_days <- function(sft.len, sft.days, period.stagger=15, 
     }
   }
   
-  colnames(sfts) <- seq(1,nperiods)
-  starts=sft.periods
+ 
+  changeovers[1:nshifts, possible.sfts$starts] = changeovers[1:nshifts, possible.sfts$starts] + 1
+  changeovers[1:nshifts, possible.sfts$ends] = changeovers[1:nshifts, possible.sfts$ends] + 1
   
-  return(list(shifts=sfts, start=starts, cost=rep(sft.len/60*sft.days,length(starts))))
+  colnames(sfts) <- seq(1,nperiods)
+  colnames(changeovers) <- seq(1,nperiods)
+  
+  return(list(shifts=sfts, changeover=changeovers, cost=rep(sft.len/60*sft.days,nshifts)))
 
 }
 
@@ -196,17 +224,17 @@ shifts$plot_weekly_shifts <- function(shift.summary, shift.periods, period.stagg
   # Convert to long format
   shifts.long = list()
   i = 1
-  for(r in 1:nrow(shift.summary)) {
-    n=shift.summary[r,n]
-    for(j in 1:n) {
+  for (r in 1:nrow(shift.summary)) {
+    n = shift.summary[r,n]
+    for (j in 1:n) {
       se = shifts$extract_start_ends(shift.periods[r,])
       
       new.shifts = lapply(se, function(x) {
-        x['type']=shift.summary[r,type]
-        x['shift']=i
+        x['type'] = shift.summary[r,type]
+        x['shift'] = i
         return(x)
       })
-      i <- i+1
+      i <- i + 1
       
       shifts.long = append(shifts.long, new.shifts)
     }
@@ -240,18 +268,18 @@ shifts$plot_weekly_shifts <- function(shift.summary, shift.periods, period.stagg
 shifts$ggplot2_theme <- function(base_size=11) {
     ret <- theme_bw(base_size) %+replace%
     theme(panel.background = element_rect(fill="#ffffff", colour=NA),
-          axis.title.x=element_text(vjust=-0.2), axis.title.y=element_text(vjust=1.5),
-          title=element_text(vjust=1.2),
-          panel.border = element_blank(), axis.line=element_blank(),
-          panel.grid.minor=element_blank(),
+          axis.title.x = element_text(vjust=-0.2), axis.title.y=element_text(vjust=1.5),
+          title = element_text(vjust=1.2),
+          panel.border = element_blank(), axis.line = element_blank(),
+          panel.grid.minor = element_blank(),
           panel.grid.major.y = element_blank(),
           panel.grid.major.x = element_line(size=0.5, colour="grey80"),
-          axis.ticks=element_blank(),
-          legend.position="bottom", 
-          axis.title=element_text(size=rel(0.8)),
-          strip.text=element_text(size=rel(1)),
+          axis.ticks = element_blank(),
+          legend.position = "bottom", 
+          axis.title = element_text(size=rel(0.8)),
+          strip.text = element_text(size=rel(1)),
           strip.background=element_rect(fill="#ffffff", colour=NA),
-          panel.spacing.y=unit(1.5, "lines"),
+          panel.spacing.y = unit(1.5, "lines"),
           legend.key = element_blank())
   
   ret
@@ -261,16 +289,16 @@ shifts$extract_start_ends <- function(arow) {
   runs = rle(arow)
   
   start.ends <- list()
-  s=0
-  i=1
-  for(r in 1:length(runs$lengths)) {
-    if(runs$values[r] == 1) {
+  s = 0
+  i = 1
+  for (r in 1:length(runs$lengths)) {
+    if (runs$values[r] == 1) {
       # Add daily shift
       start.ends[[i]] = list(start=s, end=s+runs$lengths[r])
-      i = i+1
+      i = i + 1
     }
     
-    s = s+runs$lengths[r]
+    s = s + runs$lengths[r]
   }
   
   start.ends
@@ -280,9 +308,9 @@ shifts$plot_units_vs_demand <- function(shift.summary, shift.periods, period.sta
   
   shifts.long = list()
   i = 1
-  for(r in 1:nrow(shift.summary)) {
-    n=shift.summary[r,n]
-    for(j in 1:n) {
+  for (r in 1:nrow(shift.summary)) {
+    n = shift.summary[r,n]
+    for (j in 1:n) {
       se = shifts$extract_start_ends(shift.periods[r,])
       shifts.long = append(shifts.long, se)
     }
