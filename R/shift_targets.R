@@ -3,15 +3,32 @@
 # Author: Matt Whiteside
 # Date: Dec 11, 2018
 
-optimumTarget <- function(required.servers, shift.setup, solver="glpk") {
+optimumTarget1 <- function(required.servers, shift.setup, solver="glpk") {
+  
+  # Subtract demand that can be addressed by weekly repeating consistent shifts first
+  
+  # Schedule the 24/7 demand first
+  n247 = min(required.servers$s)
+  required.servers %<>% mutate(s = s - n247)
   
   
   # Available shifts
   sfts = shifts$shift_options(shift.setup$shift.types, shift.setup$period.stagger, shift.setup$period.days,
                               shift.setup$daily.sc.window)
   a = sfts$shifts
-  c = sfts$cost
+  cost = sfts$cost
   s = sfts$changeover
+  
+  # May be overkill, if j is only a single index
+  a_fun <- function(i, j) {
+    combos <- CJ(i,j)
+    ompr::colwise(combos[, a[V1,V2], by = seq_len(nrow(combos))]$V1)
+  }
+  
+  s_fun <- function(i, j) {
+    combos <- CJ(i,j)
+    ompr::colwise(combos[, s[V1,V2], by = seq_len(nrow(combos))]$V1)
+  }
   
   # Requirements
   # Convert from weekday/weekend format to weekly matrix
@@ -25,42 +42,43 @@ optimumTarget <- function(required.servers, shift.setup, solver="glpk") {
   ns=dim(a)[1]
   np=dim(a)[2]
   
-  a_fun <- function(i, j) {
-    combos <- CJ(i,j)
-    colwise(combos[, a[V1,V2], by = seq_len(nrow(combos))]$V1)
-  }
-  
-
   optm <- MILPModel() %>%
     add_variable(x[i], i = 1:ns, type = "integer") %>%
-    set_objective(sum_expr(x[i]*colwise(c[i]), i = 1:ns), "min") %>%
+    set_objective(sum_expr(ompr::colwise(cost[i])*x[i], i = 1:ns), "min") %>%
     set_bounds(x[i], i=1:ns, lb = 0)
   
   # Required units constraint
   for(j in 1:np) {
     optm = add_constraint(optm, sum_expr(a_fun(i, j)*x[i], i=1:ns) >= r[j])
+    optm = add_constraint(optm, sum_expr(s_fun(i, j)*x[i], i=1:ns) <= maxsc)
   }
   
-  # Start time constraint
-  max_starts = 2
-  #optm = add_constraint(optm, sum_expr(*x[i]))
-  
-  
-  
-  result = optm %>% solve_model(with_ROI(solver = solver))
+  #result = optm %>% solve_model(with_ROI(solver = solver))
+  result = optm %>% solve_model(with_ROI(solver = solver, verbosity=1))
   
   soln = data.table(get_solution(result, x[i]))
   soln = soln[value != 0]
   
-  shift.summary = soln[,.(start=seconds_to_period((sfts$shift.info$start[i])*period.stagger*60),
-          type=sfts$shift.info$type[i],
-          n=value,
-          len=sfts$shift.info$costs[i]
+  shift.summary = soln[,.(
+          type=rep(sfts$type[i], value),
+          n=rep(value, value),
+          cost=rep(sfts$costs[i], value)
           )]
   
+  # Add back the 24/7 shifts
+  shift.matrix = rbind(a[soln[,rep(i, value)],], matrix(1,nrow=n247,ncol=np))
+  shift.summary = rbind(shift.summary, 
+                        data.table(type=rep('week_247', n247),
+                                   n=n247,
+                                   cost=rep(24*7, n247)
+                                   )
+                        )
   
-  return(list(shifts=shift.summary, shift.periods=a[soln$i,]))
+  return(list(shifts=shift.summary, shift.matrix=shift.matrix))
+  
 }
+
+
 
 required_matrix2 <- function(required.servers, period.stagger, period.days) {
   # Map the format output from modelTarget to the required matrix
@@ -80,14 +98,8 @@ required_matrix2 <- function(required.servers, period.stagger, period.days) {
   
   r[required.servers$i] = required.servers$s
   
-  stopifnot(all(r != 0)) # Always need a ambulance
-  
   return(r)
 }
-
-
-
-
 
 required_matrix1 <- function(required.servers, period.stagger, period.days) {
   # Map the format output from modelTarget to the required matrix
@@ -134,5 +146,13 @@ required_matrix1 <- function(required.servers, period.stagger, period.days) {
   #ggplot(data.frame(i=1:nperiods,r=r), aes(i, r)) + geom_line()
   
   return(r)
+  
+}
+
+experiment <- function(required.servers, solver="glpk") {
+  
+}
+
+scenario1 <- function(required.servers, solver) {
   
 }
