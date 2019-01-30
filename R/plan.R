@@ -40,7 +40,8 @@ shift.setup <- list(
   shift.types = c('week_12hr', '4day_12hr', '4day_10.5hr', '2day_12hr', '2day_10.5hr'),
   period.stagger = 15,
   period.days = 7,
-  daily.sc.window = c(5*60,20*60)
+  daily.sc.window = c(5*60,20*60),
+  max.sc = 4
 )
 solver <- 'symphony'
 shifts_plan <- drake_plan(

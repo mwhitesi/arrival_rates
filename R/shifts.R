@@ -45,6 +45,12 @@ shifts$encode_shift <- function(shift.type, period.stagger=15, period.days=7, da
          'week_12hr' = {
            sfts = shifts$encode_week(12*60, period.stagger, period.days, daily.sc.window)
          },
+         'week_10.5hr' = {
+           sfts = shifts$encode_week(10.5*60, period.stagger, period.days, daily.sc.window)
+         },
+         'week_8.4hr' = {
+           sfts = shifts$encode_week(8.4*60, period.stagger, period.days, daily.sc.window)
+         },
          '4day_10.5hr' = {
            sfts = shifts$encode_contiguous_days(10.5*60, 4, period.stagger, period.days, daily.sc.window)
          },
@@ -57,14 +63,20 @@ shifts$encode_shift <- function(shift.type, period.stagger=15, period.days=7, da
          '2day_12hr' = {
            sfts = shifts$encode_contiguous_days(12*60, 2, period.stagger, period.days, daily.sc.window)
          },
+         '4day_8.4hr' = {
+           sfts = shifts$encode_contiguous_days(8.4*60, 4, period.stagger, period.days, daily.sc.window)
+         },
+         '2day_8.4hr' = {
+           sfts = shifts$encode_contiguous_days(8.4*60, 2, period.stagger, period.days, daily.sc.window)
+         },
          '10.5hr' = {
            sfts = shifts$encode_contiguous_days(10.5*60, 1, period.stagger, period.days, daily.sc.window)
          },
          '12hr' = {
            sfts = shifts$encode_contiguous_days(12*60, 1, period.stagger, period.days, daily.sc.window)
          },
-         '10.5hr' = {
-           sfts = shifts$encode_contiguous_days(10.5*60, 1, period.stagger, period.days, daily.sc.window)
+         '8.4hr' = {
+           sfts = shifts$encode_contiguous_days(8.4*60, 1, period.stagger, period.days, daily.sc.window)
          },
          stop(paste('Unrecognized shift type: ',shift.type))
   )
@@ -328,8 +340,8 @@ shifts$plot_shifts_vs_demand <- function(shift.summary, shift.matrix, period.sta
   
   p = shifts %>%
     ggplot(aes(x=ts, y=Required)) +
-    geom_line(aes(linetype='Required'), size=1) +
-    geom_line(aes(x=ts, y=Scheduled, linetype='Scheduled'), size=1) +
+    geom_line(aes(linetype='Required')) +
+    geom_line(aes(x=ts, y=Scheduled, linetype='Scheduled')) +
     geom_ribbon(aes(ymin = Required, ymax = pmin(Scheduled, Required), fill = "Undercapacity "), alpha=0.5) +
     geom_ribbon(aes(ymin = Scheduled, ymax = pmin(Scheduled, Required), fill = "Overcapacity "), alpha=0.5) +
     scale_fill_manual(values = c("grey", "red")) +
