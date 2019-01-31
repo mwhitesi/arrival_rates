@@ -3,8 +3,11 @@
 # Author: Matt Whiteside
 # Date: Nov 19, 2018
 
+
+start.date = '2017-11-01'
+duration.in.min = 15
+
 # dataload_targets.R
-start.date='2017-11-01'
 data_plan <- drake_plan(
   dt1 = loadDataTarget(file_in("data/raw/EDMO_Metro_Response_Extract/Report 1.csv")),
   ar = findOutliersTarget(dt1, "arrival rates", start.date),
@@ -31,14 +34,15 @@ forecast_plan <- drake_plan(
 
 # historical_targets.R
 historical_plan <- drake_plan(
-  hd = demandTarget(dt1)
+  hd = demandTarget(dt1),
+  hu = loadUN_WKLOAD('data/raw/EDMO_unit_workload.csv', duration.in.min)
 )
 
 # shift_targets.R
 # Allowable shift types
 shift.setup <- list(
   shift.types = c('week_12hr', '4day_12hr', '4day_10.5hr', '2day_12hr', '2day_10.5hr'),
-  period.stagger = 15,
+  period.stagger = duration.in.min,
   period.days = 7,
   daily.sc.window = c(5*60,20*60),
   max.sc = 4

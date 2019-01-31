@@ -4,8 +4,17 @@
 # Date: Dec 4, 2018
 
 demandTarget <- function(datetimes, duration.in.min=15, do.plot=TRUE) {
+  #'Extract number of units on event in each duration
+  #'
+  #'Drake Target
+  #'
+  #'@param datetimes data.table of unit events with start and end timestamp columns
+  #'@param duration.in.min Number of minutes to use for binning period
+  #'@param do.plot Boolean to turn off plots
+  #'
+  #'@returns window.counts data.table of number of units on events in each period
   
-  # Assign to bins (labels represent begining of time window)
+  # Assign bins (labels represent beginning of time window)
   datetimes = timeutils$bin_time(datetimes, duration.in.min)
   window.counts = timeutils$concurrent_windows(datetimes)
   
@@ -15,8 +24,8 @@ demandTarget <- function(datetimes, duration.in.min=15, do.plot=TRUE) {
   )]
   setkey(window.counts, weekly.bin, daily.bin)
   
- 
   if(do.plot) {
+    
     # Plot overall trend
     window.counts[,`:=`(daily.median=rollmedian(count, k=95, fill=NA), weekly.median=rollmedian(count, k=671, fill=NA))]
     q95=window.counts[,quantile(count,.95)]
@@ -54,8 +63,6 @@ demandTarget <- function(datetimes, duration.in.min=15, do.plot=TRUE) {
     setorder(weekly.counts, weekly.bin, daily.bin)
     weekly.counts[,id:=1:.N]
     
-    
-    # Add time labels
     tl = apply(weekly.counts, 1, 
                function(r) {
                  wd=wday(r["weekly.bin"], label=T)
@@ -86,6 +93,8 @@ demandTarget <- function(datetimes, duration.in.min=15, do.plot=TRUE) {
   
   return(window.counts)
 }
+
+availabilityTarget <- 
 
 
 utilizationTarget <- function(window.counts, required.servers, duration.in.min=15, do.plot=TRUE) {
@@ -186,20 +195,30 @@ asymmetricRMSE <- function(actual, predicted, gamma=0.5) {
 }
   
 
-calcUtilization <- function(weekly.demand, required.servers) {
+calculateAvailability <- function(demand, units, unroll=TRUE) {
   
-  d = weekly.demand %>% mutate(wd=wday(window), ts=strftime(window, format="%H:%M", tz="UTC")) %>%
-    rowwise() %>%
-    mutate(estimate = required.servers$s[wd == required.servers$group & ts == required.servers$ts])
+  if(unroll) {
+    # Only a weeks worth of scheduled units
+    # Match weekly units for each day in study interval
+    d = demand %>% mutate(wd=wday(window), ts=strftime(window, format="%H:%M", tz="UTC")) %>%
+      rowwise() %>%
+      mutate(units = units$s[wd == units$group & ts == units$ts])
+    d %<>% ungroup()
+  } else {
+    # Match units logged on for given day to demand table
+    setkey(demand, window)
+    setkey(units, window)
+    d = merge(demand, units)
+    d = d[,.(window, count.x, count.y)]
+    setnames(d, c("count.x", "count.y"), c("count", "units"))
+  }
   
   # Drop first and last day, since first few periods will not count preceding/post events that extend beyond analysis
   firstday = min(d$window)
   lastday = max(d$window)
   d %<>% filter(date(window) != date(firstday) & date(window) != date(lastday))
   
-  d %<>% mutate(uz=count/estimate)
-  
-  d %<>% ungroup()
+  d %<>% mutate(uz=count/units)
   
   # d %>% 
   #   ggplot(aes(x=window)) +
@@ -257,6 +276,81 @@ weeklyUtilization <- function(d) {
           strip.text = element_text(size = 12, face = "bold"))
  
   
+  
+}
+
+loadUN_WKLOAD <- function(file, duration.in.min=15, do.plot=TRUE) {
+  #'Load data download from EDMO_UNIT_Workload_By_Date.sql query
+  #'
+  #'Converts UN_WKLOAD data into a count of logged on units in each period
+  #'
+  #'@param file filepath to csv file
+  #'@param duration.in.min Number of minutes to use for binning period
+  #'@param do.plot Boolean to turn off plots
+  
+  dt = data.table::fread(file, check.names = TRUE)
+  
+  # Unit IDs 1,2,3,6
+  dt = dt[substr(Unit, 6,6) %in% c(1,2,3,6)] 
+  
+  # Filter strange shifts (short with little/no work)
+  dt = dt[!(LoggedOn < 300 & OnEvent < 100)]
+  
+  # Floor timestamps to bin into equal periods
+  dt[,`:=`(start = as.POSIXct(Shift_Start_TS, tz="UTC"), end = as.POSIXct(Shift_End_TS, tz="UTC"))]
+  dt = timeutils$bin_time(dt, duration.in.min)
+  window.counts = timeutils$concurrent_windows(dt)
+  
+  window.counts[,`:=`(
+    weekly.bin=wday(window), 
+    daily.bin=as.numeric(window-floor_date(window,"day")) / (duration.in.min*60)
+  )]
+  setkey(window.counts, weekly.bin, daily.bin)
+  
+  if(do.plot) {
+    
+    # A random sunday -- just need a starting point to create artifical days of the week
+    myorigin = "2018-12-9 00:00:00"
+    
+    # Plot weekly trend
+    weekly.counts <- window.counts[,.(
+      n=sum(count), 
+      mean=mean(count),
+      sd=sd(count),
+      p50=quantile(count,.5),
+      p99=quantile(count,.99)
+    ),
+    .(weekly.bin, daily.bin)
+    ]
+    setorder(weekly.counts, weekly.bin, daily.bin)
+    weekly.counts[,id:=1:.N]
+    
+    # Add a timestamp matching each hour/day of week
+    np = max(weekly.counts$id)
+    weekly.counts[,ts:=as.POSIXct(0:(np-1)*duration.in.min*60, origin=myorigin, tz="UTC")]
+    lims = as.POSIXct(c(0,(np*duration.in.min*60)), origin=myorigin, tz="UTC")
+    
+    p.weekly <- weekly.counts %>% gather(metric,value,p50:p99) %>%
+      ggplot(aes(x=ts, y=value, group=desc(metric))) +
+      geom_line(aes(color=metric), size=1.1) +
+      scale_color_manual(values=c("black", "grey60"))+
+      scale_x_datetime(date_labels = "%A %H:%M", date_breaks='6 hour', limits=lims) +
+      ylab("Number of Logged On Units")+
+      xlab("Time Period")+
+      theme(panel.border = element_blank(),
+            panel.background = element_blank(),
+            panel.grid.minor = element_line(colour = "grey90"),
+            panel.grid.major = element_line(colour = "grey90"),
+            panel.grid.major.x = element_line(colour = "grey90"),
+            axis.text.x = element_text(angle = 45, hjust = 1, size=10),
+            axis.title = element_text(size = 12, face = "bold"),
+            strip.text = element_text(size = 12, face = "bold"))
+    
+    ggsave(paste0("data/interim/historical/plot_historical_weekly_logged_on_units.pdf"), p.weekly, dev="pdf", height=8.5, width=11)
+    
+  }
+  
+  return(window.counts)
   
 }
 
