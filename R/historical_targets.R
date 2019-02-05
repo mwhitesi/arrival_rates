@@ -105,9 +105,9 @@ utilizationTarget <- function(window.counts, required.servers, duration.in.min=1
   d = calcUtilization(window.counts, required.servers)
   
   if(do.plot) {
-    d %>% mutate(daily.mean=rollmean(x=uz,48,fill=NA),
-                 weekly.mean=rollmean(x=uz,672,fill=NA),
-                 monthly.mean=rollmean(x=uz,672*4,fill=NA)) %>%
+    d %>% mutate(daily.mean=rollmean(x=ut,48,fill=NA),
+                 weekly.mean=rollmean(x=ut,672,fill=NA),
+                 monthly.mean=rollmean(x=ut,672*4,fill=NA)) %>%
       na.omit() %>%
       ggplot(aes(window)) +
       geom_line(aes(y=daily.mean), color='grey40', alpha=.8) +
@@ -199,7 +199,7 @@ calculateAvailability <- function(demand, units, unroll=TRUE) {
   
   if(unroll) {
     # Only a weeks worth of scheduled units
-    # Match weekly units for each day in study interval
+    # Match weekly units for each day in dataset
     d = demand %>% mutate(wd=wday(window), ts=strftime(window, format="%H:%M", tz="UTC")) %>%
       rowwise() %>%
       mutate(units = units$s[wd == units$group & ts == units$ts])
@@ -218,7 +218,8 @@ calculateAvailability <- function(demand, units, unroll=TRUE) {
   lastday = max(d$window)
   d %<>% filter(date(window) != date(firstday) & date(window) != date(lastday))
   
-  d %<>% mutate(uz=count/units)
+  d %<>% mutate(ut=count/units, av=units-count)
+  
   
   # d %>% 
   #   ggplot(aes(x=window)) +
@@ -229,18 +230,18 @@ calculateAvailability <- function(demand, units, unroll=TRUE) {
 }
 
 utilizationSummary <-function(d) {
-  uz = d %>% pull(uz)
+  ut = d %>% pull(ut)
   reqd = d %>% pull(estimate)
   
   res = list(
-    max=max(uz),
-    min=min(uz),
-    p50=quantile(uz,.5),
-    p90=quantile(uz,.9),
-    mean=mean(uz),
-    sd=sd(uz),
-    overcapacity.periods=sum(uz > 1),
-    undercapacity.periods=sum(uz < .5),
+    max=max(ut),
+    min=min(ut),
+    p50=quantile(ut,.5),
+    p90=quantile(ut,.9),
+    mean=mean(ut),
+    sd=sd(ut),
+    overcapacity.periods=sum(ut > 1),
+    undercapacity.periods=sum(ut < .5),
     d.total=sum(reqd),
     d.sum=mean(reqd)
   )
@@ -250,7 +251,7 @@ utilizationSummary <-function(d) {
 
 weeklyUtilization <- function(d) {
   
-  tbl = d %>% group_by(weekly.bin, daily.bin) %>% dplyr::summarise(mean=mean(uz)) %>% ungroup() %>%
+  tbl = d %>% group_by(weekly.bin, daily.bin) %>% dplyr::summarise(mean=mean(ut)) %>% ungroup() %>%
     mutate(id=1:n())
   tl = apply(tbl, 1, 
              function(r) {
@@ -287,17 +288,47 @@ loadUN_WKLOAD <- function(file, duration.in.min=15, do.plot=TRUE) {
   #'@param file filepath to csv file
   #'@param duration.in.min Number of minutes to use for binning period
   #'@param do.plot Boolean to turn off plots
+  #'@param logfile path to file that records log_messages
   
   dt = data.table::fread(file, check.names = TRUE)
   
   # Unit IDs 1,2,3,6
-  dt = dt[substr(Unit, 6,6) %in% c(1,2,3,6)] 
+  log_message('Step: filtering specialty units')
+  log_message('Rule: 6th character in Unit Name is 1,2,3,6')
+  nr = nrow(dt)
+  log_message(sprintf('Before: %d', nr))
+  dt = dt[substr(Unit, 6,6) %in% c(1,2,3,6)]
+  log_message(sprintf('After: %d. Removed: %d', nrow(dt), nr-nrow(dt)))
   
-  # Filter strange shifts (short with little/no work)
-  dt = dt[!(LoggedOn < 300 & OnEvent < 100)]
+  # Shift time booked for event
+  log_message('Step: filtering special event booked shifts')
+  log_message('Rule: Remove LoggedOn >= 4hrs, OnEvent/LoggedOn > 0.95')
+  nr = nrow(dt)
+  log_message(sprintf('Before: %d', nr))
+  rows = dt$LoggedOn >= 4*60*60 & dt$OnEvent/dt$LoggedOn > .95
+  rem = dt[rows]
+  dt = dt[!rows]
+  log_message(sprintf('After: %d. Removed: %d', nrow(dt), nrow(rem)))
+  log_message("\n--START-REMOVED--")
+  log_table(rem)
+  log_message("\n--END-REMOVED--\n\n")
+  
+  # Short orphan shifts
+  log_message('Step: filtering short orphan shifts')
+  log_message('Rule: Remove LoggedOn <= 1hrs and no >= 4hr LoggedOn record within 90 mins that has same unit ID and DGROUP')
+  dt = dt[, `:=`(start = as.POSIXct(Shift_Start_TS, tz="UTC"), end=as.POSIXct(Shift_End_TS, tz="UTC"))]
+  long = dt[LoggedOn > 3600]
+  short = dt[LoggedOn <= 3600]
+  setkeyv(long, c('Unit', 'start'))
+  orphans = short %>% rowwise %>% do(x=has_continuing_shift(., long)) %>% unnest(x) %>% mutate(orphan = x != 1) %>% pull(orphan)
+  dt=rbind(long,short[!orphans])
+  log_message(sprintf('After: %d. Removed: %d', nrow(dt), sum(orphans)))
+  log_message("\n--START-REMOVED--")
+  log_table(short[orphans, .(Unit, Vehicle, Shift_Start_TS, Shift_End_TS, LoggedOn, OnEvent)])
+  log_message("\n--END-REMOVED--\n\n")
+  
   
   # Floor timestamps to bin into equal periods
-  dt[,`:=`(start = as.POSIXct(Shift_Start_TS, tz="UTC"), end = as.POSIXct(Shift_End_TS, tz="UTC"))]
   dt = timeutils$bin_time(dt, duration.in.min)
   window.counts = timeutils$concurrent_windows(dt)
   
@@ -350,8 +381,32 @@ loadUN_WKLOAD <- function(file, duration.in.min=15, do.plot=TRUE) {
     
   }
   
+ 
   return(window.counts)
   
+}
+
+capture.output(loadUN_WKLOAD(file, do.plot=FALSE), file='data/interim/UNIT_WKLOAD.log', split=FALSE, type = 'message')
+
+log_message <- function(msg) {
+  message(msg)
+}
+
+log_table <- function(tbl) {
+  apply(tbl, 1, function(r) log_message(paste0(r, '\t')))
+}
+
+has_continuing_shift <- function(shortrow, long) {
+ 
+  match = long[
+    substr(Unit,1,5) == substr(shortrow$Unit,1,5) &    # Same DGROUP
+    substring(Unit,8) == substring(shortrow$Unit,8) &  # Same Unit Number
+    start > shortrow$end &                             # Starts after
+    start <= (shortrow$end + minutes(90)) &            # Starts within 90 mins
+    LoggedOn > 4*60*60                                 # Is at least 4 hrs
+  ]
+  
+  return(nrow(match))
 }
 
   
