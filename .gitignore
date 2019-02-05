@@ -4,4 +4,5 @@ rmspe.pdf
 .Rproj.user
 .RData
 .Rhistory
+.RDataTmp
 data/

@@ -342,8 +342,8 @@ shifts$plot_shifts_vs_demand <- function(shift.summary, shift.matrix, period.sta
     ggplot(aes(x=ts, y=Required)) +
     geom_line(aes(linetype='Required')) +
     geom_line(aes(x=ts, y=Scheduled, linetype='Scheduled')) +
-    geom_ribbon(aes(ymin = Required, ymax = pmin(Scheduled, Required), fill = "Undercapacity "), alpha=0.5) +
-    geom_ribbon(aes(ymin = Scheduled, ymax = pmin(Scheduled, Required), fill = "Overcapacity "), alpha=0.5) +
+    geom_ribbon(aes(ymin = Required, ymax = pmin(Scheduled, Required), fill = "Overcapacity "), alpha=0.5) +
+    geom_ribbon(aes(ymin = Scheduled, ymax = pmin(Scheduled, Required), fill = "Undercapacity "), alpha=0.5) +
     scale_fill_manual(values = c("grey", "red")) +
     scale_x_datetime(date_labels = "%A %H:%M", date_breaks='6 hour', limits=lims) +
     labs(y="# Units", x=NULL) + 
@@ -375,7 +375,7 @@ shifts$evaluationSummary <- function(shift.matrix, period.stagger, demand.table)
   est = apply(shift.matrix, 2, sum)
   req = demand.table$s
   diff = est-req
-  overcap = diff > 0
+  overcap = diff < 0
   hrs = period.stagger / 60
   
   results = list()
@@ -389,4 +389,95 @@ shifts$evaluationSummary <- function(shift.matrix, period.stagger, demand.table)
   
   return(results)
 }
+
+shifts$performance <- function(dt) {
+  #'Compute performance metrics for a time series consisting of staffed units (staffed) vs required units (required)
+  #'
+  #'@param dt data.table with columns:
+  #'  \describe{
+  #'    \item{ts}{POSIXct}
+  #'    \item{staffed}{double}
+  #'    \item{required}{double}
+  #'  }
+  #'@returns list
+  
+  hrs = as.double(difftime(dt$window[2], dt$window[1], units='hours'))
+  dt[,`:=`(ut=required/staffed, av=staffed-required)]
+  delta = dt$av
+  overcap = delta < 0
+  
+  mymetrics <- function(v){
+    return(list(
+      max=max(v),
+      min=min(v),
+      p50=quantile(v,.5),
+      p90=quantile(v,.9),
+      mean=mean(v),
+      sd=sd(v),
+      tot=sum(v),
+      rmse=sqrt(mean(v^2))
+    ))
+  }
+  
+  results = list()
+  results[['StaffedTotalHrs']] = sum(dt$staffed) * hrs
+  results[['RequiredTotalHrs']] = sum(dt$required) * hrs
+  results[['UnitAvailableTotalHrs']] = sum(!overcap) * hrs
+  results[['UnitAvailableProportion']] = sum(!overcap) / length(ovecap)
+  results[['Availability']] = mymetrics(delta)
+  results[['OvercapacityUnitHrs']] = mymetrics(delta[overcap]*hrs)
+  results[['UndercapacityUnitHrs']] = mymetrics(delta[!overcap]*hrs)
+  results[['Utilization']] = mymetrics(dt$ut)
+  
+  return(results)
+}
+
+shifts$plot_weekly_availability_line <- function(dt) {
+  
+  lims = c(min(dt$ts), max(dt$ts))
+  
+  p = shifts %>%
+    ggplot(aes(x=ts, y=required)) +
+    geom_line(aes(linetype='Required')) +
+    geom_line(aes(x=ts, y=staffed, linetype='Staffed')) +
+    geom_ribbon(aes(ymin = required, ymax = pmin(staffed, required), fill = "Overcapacity "), alpha=0.5) +
+    geom_ribbon(aes(ymin = staffed, ymax = pmin(staffed, required), fill = "Undercapacity "), alpha=0.5) +
+    scale_fill_manual(values = c("grey", "red")) +
+    scale_x_datetime(date_labels = "%A %H:%M", date_breaks='6 hour', limits=lims) +
+    labs(y="# Units", x=NULL) + 
+    theme(axis.text.x=element_text(angle=45, hjust=1), axis.text.y=element_text(margin=margin(0,20,0,20)), legend.title=element_blank()) +
+    theme(panel.background = element_rect(fill="#ffffff", colour=NA),
+          axis.title.x = element_text(vjust=-0.2), axis.title.y=element_text(vjust=1.5),
+          title = element_text(vjust=1.2),
+          panel.border = element_blank(),
+          axis.line =element_line(size=0.5, colour="grey80"),
+          panel.grid.minor = element_blank(),
+          panel.grid.major.x = element_line(size=0.5, colour="grey80"),
+          panel.grid.major.y = element_line(size=0.5, colour="grey80"),
+          axis.ticks = element_blank(),
+          legend.position = "bottom", 
+          axis.title = element_text(size=rel(0.8)),
+          strip.text = element_text(size=rel(1)),
+          strip.background=element_rect(fill="#ffffff", colour=NA),
+          panel.spacing.y = unit(1.5, "lines"),
+          legend.key = element_blank()) +
+    coord_cartesian(xlim=lims,expand=FALSE) +
+    ggtitle('Staffed Units vs Required Units')
+  
+  return(p)
+}
+
+shifts$plot_weekly_availability_bar <- function() {
+  
+}
+
+shifts$plot_weekly_utilization_bar <- function() {
+  
+}
+
+shifts$plot_availability_distribution <- function() {
+  
+}
+
+
 

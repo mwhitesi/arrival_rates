@@ -52,3 +52,5 @@ timeutils$concurrent_windows <- function(dt) {
   return(histories[,.(count = .N), window])
 }
 
+
+
