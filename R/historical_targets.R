@@ -409,6 +409,74 @@ has_continuing_shift <- function(shortrow, long) {
   return(nrow(match))
 }
 
+shifts$plot_weekly_availability_line <- function(historical, funded, modelled) {
+  
+  lims = c(min(dt$window), max(dt$window))
+  
+  p = shifts %>%
+    ggplot(aes(x=window, y=required)) +
+    geom_line(aes(linetype='Required')) +
+    geom_line(aes(x=window, y=staffed, linetype='Staffed')) +
+    geom_ribbon(aes(ymin = required, ymax = pmin(staffed, required), fill = "Overcapacity "), alpha=0.5) +
+    geom_ribbon(aes(ymin = staffed, ymax = pmin(staffed, required), fill = "Undercapacity "), alpha=0.5) +
+    scale_fill_manual(values = c("grey", "red")) +
+    scale_x_datetime(date_labels = "%A %H:%M", date_breaks='6 hour', limits=lims) +
+    labs(y="# Units", x=NULL) + 
+    theme(axis.text.x=element_text(angle=45, hjust=1), axis.text.y=element_text(margin=margin(0,20,0,20)), legend.title=element_blank()) +
+    theme(panel.background = element_rect(fill="#ffffff", colour=NA),
+          axis.title.x = element_text(vjust=-0.2), axis.title.y=element_text(vjust=1.5),
+          title = element_text(vjust=1.2),
+          panel.border = element_blank(),
+          axis.line =element_line(size=0.5, colour="grey80"),
+          panel.grid.minor = element_blank(),
+          panel.grid.major.x = element_line(size=0.5, colour="grey80"),
+          panel.grid.major.y = element_line(size=0.5, colour="grey80"),
+          axis.ticks = element_blank(),
+          legend.position = "bottom", 
+          axis.title = element_text(size=rel(0.8)),
+          strip.text = element_text(size=rel(1)),
+          strip.background=element_rect(fill="#ffffff", colour=NA),
+          panel.spacing.y = unit(1.5, "lines"),
+          legend.key = element_blank()) +
+    coord_cartesian(xlim=lims,expand=FALSE) +
+    ggtitle('Staffed Units vs Required Units')
+  
+  return(p)
+}
+
+shifts$plot_weekly_availability_bar <- function() {
+  
+}
+
+shifts$plot_weekly_utilization_bar <- function() {
+  
+}
+
+shifts$plot_availability_distribution <- function() {
+  
+}
+
+loadProfile <- function(file, duration.in.min=15, do.plot=TRUE) {
+  #'Load data csv data from Provincial profile query
+  #'
+  #'Converts Profile shift data into a count of scheduled units in each period
+  #'
+  #'@param file filepath to csv file
+  #'@param duration.in.min Number of minutes to use for binning period
+  #'@param do.plot Boolean to turn off plots
+  
+  dt = data.table::fread(file, check.names = TRUE)
+  
+  
+  # Filter EDMO 911 ALS/BLS units
+  dt = dt[(Level == "BLS" | Level == "ALS") & Type == "Ambulance"]
+  dt = dt[Category == "911"]
+  
+
+
+
+
+
   
   
   

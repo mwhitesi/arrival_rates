@@ -390,6 +390,19 @@ shifts$evaluationSummary <- function(shift.matrix, period.stagger, demand.table)
   return(results)
 }
 
+shifts$trim <- function(dt) {
+  #'Remove first and last day from dataset
+  #'
+  #'@param dt data.table with columns:
+  #'  \describe{
+  #'    \item{window}{POSIXct}
+  #'@returns data.table
+  
+  firstday = min(dt$window)
+  lastday = max(dt$window)
+  dt = dt[as.IDate(window) != as.IDate(firstday) & as.IDate(window) != as.IDate(lastday)]
+}
+
 shifts$performance <- function(dt) {
   #'Compute performance metrics for a time series consisting of staffed units (staffed) vs required units (required)
   #'
@@ -423,23 +436,134 @@ shifts$performance <- function(dt) {
   results[['StaffedTotalHrs']] = sum(dt$staffed) * hrs
   results[['RequiredTotalHrs']] = sum(dt$required) * hrs
   results[['UnitAvailableTotalHrs']] = sum(!overcap) * hrs
-  results[['UnitAvailableProportion']] = sum(!overcap) / length(ovecap)
+  results[['UnitAvailableProportion']] = sum(!overcap) / length(overcap)
   results[['Availability']] = mymetrics(delta)
-  results[['OvercapacityUnitHrs']] = mymetrics(delta[overcap]*hrs)
+  results[['OvercapacityUnitHrs']] = mymetrics(abs(delta[overcap])*hrs)
   results[['UndercapacityUnitHrs']] = mymetrics(delta[!overcap]*hrs)
   results[['Utilization']] = mymetrics(dt$ut)
   
   return(results)
 }
 
+shifts$weekly_bin <- function(dt, duration.in.min) {
+  #' Assign grouping bins based on day of week and period in day
+  #' 
+  #' @param dt data.table with window column (POSIXct)
+  #' @param duration.in.min Number of minutes in measurement period
+  #' @return data.table with numeric weekly.bin and daily.bin columns
+
+  
+  dt[,`:=`(
+    weekly.bin=wday(window), 
+    daily.bin=as.numeric(window-floor_date(window,"day")) / (duration.in.min*60)
+  )]
+}
+
+shifts$weekly_aggregate <- function(dt, duration.in.min) {
+  #' Compute weekly average for all metrics in timeseries data.table
+  #' 
+  #' @param dt data.table with window column (POSIXct)
+  #' @param duration.in.min Number of minutes in measurement period
+  #' @return data.table with numeric weekly.bin and daily.bin columns
+  
+  cn = colnames(dt)
+  
+  if(!('weekly.bin' %in% cn) | !('daily.bin' %in% cn)) {
+    dt =shifts$weekly_bin(dt, duration.in.min)
+  }
+  
+  val.cols = cn[!cn %in% c('window', 'weekly.bin', 'daily.bin')]
+  
+  dtnew <- dt[,(val.cols) := lapply(.SD, as.double), .SDcols=val.cols]
+  
+  colnms = paste(val.cols, 'mean', sep='.')
+  dtnew[, (colnms) := lapply(.SD, mean), by=.(weekly.bin, daily.bin), .SDcols=val.cols]
+  
+  colnms = paste(val.cols, 'p50', sep='.')
+  dtnew[, (colnms) := lapply(.SD, median), by=.(weekly.bin, daily.bin), .SDcols=val.cols]
+  
+  colnms = paste(val.cols, 'p90', sep='.')
+  dtnew[, (colnms) := lapply(.SD, quantile, .9), by=.(weekly.bin, daily.bin), .SDcols=val.cols]
+  
+  colnms = paste(val.cols, 'sd', sep='.')
+  dtnew[, (colnms) := lapply(.SD, sd), by=.(weekly.bin, daily.bin), .SDcols=val.cols]
+  
+  dtnew[, UnitAvailableProportion := sum(av>0)/.N, by=.(weekly.bin, daily.bin)]
+  
+  weekly = unique(dtnew, by=c("weekly.bin", "daily.bin"))
+  
+  return(weekly)
+}
+
+
+
+shifts$shift_join <- function(shifts, demand) {
+  #' Take a shift count matrix and right joins it with the demand matrix
+  #' 
+  #' Fills in missing values between max and min timestamps on demand matrix.
+  #' 
+  #' @param shifts data.table with window (POSIXct) and count (numeric) columns
+  #' @param demand data.table with window and count columns
+  #' @return a data.table with window (POSIXct), staffed (numeric), and required (numeric) columns
+  
+  ts.min = min(demand$window)
+  ts.max = max(demand$window)
+  delta = difftime(demand$window[2], demand$window[1], units='mins')
+  
+  ts=seq(ts.min, ts.max, by=delta)
+  
+  dt = data.table(window=ts)
+  setkey(dt, 'window')
+  setkey(shifts, 'window')
+  setkey(demand, 'window')
+  
+  dt = merge(dt, demand, all.x=TRUE)
+  dt = dt[,.(window, required=count)]
+  dt[is.na(required)] = 0
+  
+  dt = merge(dt, shifts, all.x=TRUE)
+  dt = dt[,.(window, required, staffed=count)]
+  dt[is.na(staffed)] = 0
+  
+  return(dt)
+}
+
+shifts$fill <- function(dt, start, end) {
+  #' Take weekly data and expand to timeseries defined by start and end
+  #' 
+  #' 
+  #' @param dt data.table with window (POSIXct) and count (numeric)
+  #' @param start POSIXct start timestamp
+  #' @param end POSIXct end timestamp
+  #' @return data.table with window and count columns
+  
+  
+  delta = difftime(dt$window[2], dt$window[1], units='mins')
+  stopifnot(nrow(dt) == 7*24*60/as.numeric(delta))
+  ts=seq(start, end, by=delta)
+  
+  setorder(dt, window)
+  n = nrow(dt)
+  
+  i = dt[wday(window) == wday(start) & as.ITime(window) == as.ITime(start), which=TRUE]
+  stopifnot(i < n & i > 1)
+  neworder = c(i:n, 1:(i-1))
+  
+  dt = dt[neworder]
+  
+  res = data.table(window=ts, count=rep_len(dt$count, length(ts)))
+  
+  return(res)
+}
+
 shifts$plot_weekly_availability_line <- function(dt) {
   
-  lims = c(min(dt$ts), max(dt$ts))
+  lims = c(min(dt$window), max(dt$window))
   
   p = shifts %>%
-    ggplot(aes(x=ts, y=required)) +
+    ggplot(aes(x=window, y=required)) +
     geom_line(aes(linetype='Required')) +
-    geom_line(aes(x=ts, y=staffed, linetype='Staffed')) +
+    geom_line(aes(x=window, y=staffed, linetype='Staffed')) +
     geom_ribbon(aes(ymin = required, ymax = pmin(staffed, required), fill = "Overcapacity "), alpha=0.5) +
     geom_ribbon(aes(ymin = staffed, ymax = pmin(staffed, required), fill = "Undercapacity "), alpha=0.5) +
     scale_fill_manual(values = c("grey", "red")) +
