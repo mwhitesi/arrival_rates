@@ -178,7 +178,6 @@ optimumExperiment <- function(required.servers) {
     period.days = period.days
   )
   r1 = scenario1(required.servers, shift.setup1, solver)
-  r1$shift.summary = rbind(r1$shift.summary, n247.summary)
   r1$shift.matrix = rbind(r1$shift.matrix, n247.matrix)
   
   p11 = shifts$plot_weekly_shift_gantt(r1$shift.summary, r1$shift.matrix, period.stagger)

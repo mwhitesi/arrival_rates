@@ -7,29 +7,38 @@
 start.date = '2017-11-01'
 duration.in.min = 15
 
-# dataload_targets.R
+# Load historical data
+dir.create('data/interim/dataload/', showWarnings=FALSE)
 data_plan <- drake_plan(
-  dt1 = loadDataTarget(file_in("data/raw/EDMO_Metro_Response_Extract/Report 1.csv")),
-  ar = findOutliersTarget(dt1, "arrival rates", start.date),
-  st = findOutliersTarget(dt1, "service time", start.date)
+  resp = dataload$loadEventData(file_in("data/raw/EDMO_Metro_Response_Extract/Report 1.csv")),
+  histU = dataload$loadUNIT_WKLOAD(file_in("data/raw/EDMO_unit_workload.csv"), duration.in.min, do.plot=TRUE),
+  fundU = dataload$loadProvProfile(file_in("data/raw/Profile_2019-01-25.csv"), duration.in.min, do.plot=TRUE)
 )
 
-# analysis_targets.R
-analysis_plan <- drake_plan(
-  ar2 = addTimeColumns(ar),
-  st2 = addTimeColumns(st),
-  ar_rates = arrivalSummaryTarget(ar2, file_out("data/processed/EDMO_arrival_rates__2017-11-01_2018-11-01.csv")),
-  st_rates = serviceTimeSummaryTarget(st2, file_out("data/processed/EDMO_service_time__2017-11-01_2018-11-01.csv")),
-  rates = correlationSummaryTarget(st_rates, ar_rates)
+# Queue model
+dir.create('data/interim/queuemodel/', showWarnings=FALSE)
+service.level = 0.001  # probability of waiting for unit to become available for new events
+  
+queuemodel_plan <- drake_plan(
+  ar = queuemodel$findOutliers(resp, "arrival rates", start.date),
+  st = queuemodel$findOutliers(resp, "service time", start.date),
+  ar2 = queuemodel$addTimeColumns(ar),
+  st2 = queuemodel$addTimeColumns(st),
+  ar_summary = queuemodel$arrivalSummary(ar2, file_out("data/processed/EDMO_arrival_rates__2017-11-01_2018-11-01.csv")),
+  st_summary = queuemodel$serviceTimeSummary(st2, file_out("data/processed/EDMO_service_time__2017-11-01_2018-11-01.csv")),
+  st_ar_corr = queuemodel$correlationSummary(st_summary, ar_summary),
+  st_pvals = queuemodel$trends(ar2, st2)
+  #servs = modelTarget(ar2, st2)
   
 )
+
+whole_plan <- bind_plans(data_plan, queuemodel_plan)
 
 
 
 # forecast_targets.R
 forecast_plan <- drake_plan(
-  st_pvals = trendsTarget(ar2, st2),
-  servs = modelTarget(ar2, st2)
+  
 )
 
 # historical_targets.R
