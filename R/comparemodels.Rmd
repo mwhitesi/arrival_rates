@@ -1,0 +1,196 @@
+---
+title: "comparemodels"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, fig.width=12, fig.height=7)
+```
+
+
+```{r init, include=FALSE}
+
+# Load datasets
+demand = drake::readd(demand)
+qmodU = drake::readd(qmodU)
+rmodU = drake::readd(rmodU)
+
+# Add datetime column
+qmodU = queuemodel__convert(qmodU)
+rmodU = queuemodel__convert(rmodU)
+
+setkey(qmodU, window)
+setkey(demand, window)
+setkey(rmodU, window)
+
+# Round regression targets
+rmodU[,count:=ceiling(count)]
+
+# Merge demand & unit data.tables
+start.ts = min(demand$window)
+end.ts = max(demand$window)
+
+qmodU = shifts$fill(qmodU, start.ts, end.ts)
+rmodU = shifts$fill(rmodU, start.ts, end.ts)
+
+qmodDT = shifts$shift_join(qmodU, demand)
+rmodDT = shifts$shift_join(rmodU, demand)
+
+qmodDT = shifts$trim(qmodDT)
+rmodDT = shifts$trim(rmodDT)
+
+res.rmod = shifts$performance(rmodDT)
+res.qmod = shifts$performance(qmodDT)
+
+wk.rmod = shifts$weekly_aggregate(rmodDT, 60)
+wk.qmod = shifts$weekly_aggregate(qmodDT, 60)
+
+```
+
+
+# Demand Modelling
+
+## Models
+
+Two methods were tried for fitting and estimating required units in each period given a service level (or prediction interval):
+
+  1. Erlang-C queue model.
+    - Inputs: Weekly Arrival rate and Service Time in each 15 minute period. 
+    - Parameters: service level (probability of new event having to wait for unit to become available), 
+        arrival rate lag (the number of preceeding periods to use in arrival rate average),
+        service rate lag (the number of preceeding periods to use in arrival rate average),
+        load threshold (when the unit estimate drops below this value, service rate is increased by 5% and a new unit 
+                        requirement is calculated)
+  2. Fourier Regression model.
+    - Inputs: Number of concurrent units on event for each 15 minute period in the whole study duration
+    - Parameters: prediction interval (the upper prediction interval bound determines the final required number of units)
+  
+## Performance
+  
+### General
+  
+  
+```{r perform1, warning=FALSE}
+
+rownms <- c('Queue Model','FFT Regression Model')
+
+colnms <- c('Total Hours', "Hours Unit Available", "Proportion Unit Available")
+df1 = data.frame(A=c(res.qmod$StaffedTotalHrs, res.rmod$StaffedTotalHrs), 
+                 B=c(res.qmod$UnitAvailableTotalHrs, res.rmod$UnitAvailableTotalHrs),
+                 C=c(res.qmod$UnitAvailableProportion, res.rmod$UnitAvailableProportion),
+                 row.names = rownms)
+start.ts = min(qmodDT$window)
+end.ts = max(qmodDT$window)              
+knitr::kable(df1, caption=paste("Performance Metrics for", start.ts,' - ', end.ts), row.names = TRUE, col.names = colnms)
+
+```
+
+<style>
+  .superbigimage{
+    overflow-x:scroll;
+    white-space: nowrap;
+  }
+
+.superbigimage img{
+  max-width: none;
+}
+</style>
+  
+
+<div class="superbigimage">
+```{r plot1, warning=FALSE}
+
+nap = wk.rmod[wk.qmod, .(window=window, fft.regression=1-UnitAvailableProportion, queue.model=1-i.UnitAvailableProportion)]
+
+p = performance__plot_weekly_multi_metric_bar(nap, c('fft.regression','queue.model'), title='Average Time Unit is Unavailable',
+                                               ylabel = 'Proportion')
+p
+
+````
+</div>
+
+### Utilization
+
+```{r perform2, warning=FALSE}
+
+
+colnms <- c("Mean", "Median", "90th Percentile", "Max", "Min")
+df2 = data.frame(A=c(res.qmod$Utilization$mean, res.rmod$Utilization$mean),
+                 B=c(res.qmod$Utilization$p50, res.rmod$Utilization$p50),
+                 C=c(res.qmod$Utilization$p90, res.rmod$Utilization$p90),
+                 D=c(res.qmod$Utilization$max, res.rmod$Utilization$max),
+                 E=c(res.qmod$Utilization$min, res.rmod$Utilization$min),
+                 row.names = rownms)
+knitr::kable(df2, caption=paste("Utilization Metrics for", start.ts,' - ', end.ts), row.names = TRUE, col.names = colnms)
+
+```
+<div class="superbigimage">
+```{r plot2} 
+
+cols = c('fft.regression','queue.model')
+ut = wk.rmod[wk.qmod, .(window=window, fft.regression=ut.mean, queue.model=i.ut.mean)]
+
+p = performance__plot_weekly_multi_metric_line(ut, c('fft.regression','queue.model'), title='Average Utilization',
+                                               ylabel = 'Proportion on Event')
+p
+```
+</div>
+
+### Availability
+
+```{r perform3, warning=FALSE}
+
+
+colnms <- c("Mean", "Median", "90th Percentile", "Max", "Min")
+df2 = data.frame(A=c(res.qmod$Availability$mean, res.rmod$Availability$mean),
+                 B=c(res.qmod$Availability$p50, res.rmod$Availability$p50),
+                 C=c(res.qmod$Availability$p90, res.rmod$Availability$p90),
+                 D=c(res.qmod$Availability$max, res.rmod$Availability$max),
+                 E=c(res.qmod$Availability$min, res.rmod$Availability$min),
+                 row.names = rownms)
+knitr::kable(df2, caption=paste("Availability Metrics for", start.ts,' - ', end.ts), row.names = TRUE, col.names = colnms)
+
+```
+
+
+Some of the largest difference between estimated and actual units occurred on:
+  
+  1. 2018-01-01 2018, Differences ranged from -10 to -2 over 00:30-1:30. New years.
+  2. 2018-02-13, Differences ranged from -7 to -2 over 13:30-17:30. Freezing rain, lots of fall events (Card 17).
+  3. 2018-10-11 Differences ranged from -6 to -3 over 16:30:00-18:15:00. No discovered explanation.
+  
+  
+<div class="superbigimage">
+```{r plot3} 
+
+cols = c('fft.regression','queue.model')
+av = wk.rmod[wk.qmod, .(window=window, fft.regression=av.mean, queue.model=i.av.mean)]
+
+p = performance__plot_weekly_multi_metric_line(av, c('fft.regression','queue.model'), title='Average Availability',
+                                               ylabel = '# Units')
+p
+```
+</div>
+  
+
+### Model Evaluation
+  
+```{r perform4, echo=FALSE, warning=FALSE}
+  
+  
+  colnms <- c("Overcapacity Mean", "Overcapacity Standard Deviation", "Overcapacity RMSE", "Overcapacity Total",
+              "Undercapacity Mean", "Undercapacity Standard Deviation", "Undercapacity RMSE", "Undercapacity Total")
+  df3 = data.frame(A=c(res.qmod$OvercapacityUnitHrs$mean, res.rmod$OvercapacityUnitHrs$mean),
+                   B=c(res.qmod$OvercapacityUnitHrs$sd, res.rmod$OvercapacityUnitHrs$sd),
+                   C=c(res.qmod$OvercapacityUnitHrs$rmse, res.rmod$OvercapacityUnitHrs$rmse),
+                   D=c(res.qmod$OvercapacityUnitHrs$tot, res.rmod$OvercapacityUnitHrs$tot),
+                   E=c(res.qmod$UndercapacityUnitHrs$mean, res.rmod$UndercapacityUnitHrs$mean),
+                   F=c(res.qmod$UndercapacityUnitHrs$sd, res.rmod$UndercapacityUnitHrs$sd),
+                   G=c(res.qmod$UndercapacityUnitHrs$rmse, res.rmod$UndercapacityUnitHrs$rmse),
+                   H=c(res.qmod$UndercapacityUnitHrs$tot, res.rmod$UndercapacityUnitHrs$tot),
+                   row.names = rownms)
+  knitr::kable(df3, caption=paste("Error Metrics for", start.ts,' - ', end.ts), row.names = TRUE, col.names = colnms)
+  
+```
+
+To assess the models, error was split into Overcapacity (Unit hours below demand level i.e. Code Red) and Undercapacity (Unit hours in excess of demand).

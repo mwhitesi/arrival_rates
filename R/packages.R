@@ -23,7 +23,8 @@ library(tibbletime)
 library(tidyr)
 library(tidyverse)
 library(zoo)
-
+library(knitr)
+library(rmarkdown)
 
 
 

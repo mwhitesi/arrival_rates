@@ -455,7 +455,7 @@ shifts$weekly_bin <- function(dt, duration.in.min) {
   
   dt[,`:=`(
     weekly.bin=wday(window), 
-    daily.bin=as.numeric(window-floor_date(window,"day")) / (duration.in.min*60)
+    daily.bin=as.numeric(window-floor_date(window,"day")) %/% (duration.in.min*60)
   )]
 }
 
@@ -467,10 +467,9 @@ shifts$weekly_aggregate <- function(dt, duration.in.min) {
   #' @return data.table with numeric weekly.bin and daily.bin columns
   
   cn = colnames(dt)
+  dt = data.table::copy(dt)
+  dt =shifts$weekly_bin(dt, duration.in.min)
   
-  if(!('weekly.bin' %in% cn) | !('daily.bin' %in% cn)) {
-    dt =shifts$weekly_bin(dt, duration.in.min)
-  }
   
   val.cols = cn[!cn %in% c('window', 'weekly.bin', 'daily.bin')]
   
@@ -513,9 +512,7 @@ shifts$shift_join <- function(shifts, demand) {
   ts=seq(ts.min, ts.max, by=delta)
   
   dt = data.table(window=ts)
-  setkey(dt, 'window')
-  setkey(shifts, 'window')
-  setkey(demand, 'window')
+  setkey(dt, window)
   
   dt = merge(dt, demand, all.x=TRUE)
   dt = dt[,.(window, required=count)]

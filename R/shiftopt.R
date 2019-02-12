@@ -3,7 +3,7 @@
 # Author: Matt Whiteside
 # Date: Dec 11, 2018
 
-optimumTarget1 <- function(required.servers, shift.setup, solver="glpk") {
+shiftopt__optimize <- function(required.servers, shift.setup, solver="glpk") {
   
   # Subtract demand that can be addressed by weekly repeating consistent shifts first
   
@@ -33,7 +33,7 @@ optimumTarget1 <- function(required.servers, shift.setup, solver="glpk") {
   # Requirements
   # Convert from weekday/weekend format to weekly matrix
   if(shift.setup$period.days == 7) {
-    r = required_matrix2(required.servers, shift.setup$period.stagger, shift.setup$period.days)
+    r = shiftopt__required_matrix2(required.servers, shift.setup$period.stagger, shift.setup$period.days)
   } else {
     stop(sprintf('Periods of length %i currently not available', shift.setup$period.days))
   }
@@ -80,9 +80,9 @@ optimumTarget1 <- function(required.servers, shift.setup, solver="glpk") {
 
 
 
-required_matrix2 <- function(required.servers, period.stagger, period.days) {
-  # Map the format output from modelTarget to the required matrix
-  # modelTarget could change and this function will need to be updated
+shiftopt__required_matrix2 <- function(required.servers, period.stagger, period.days) {
+  # Map the format output from queuemodel__model to the required matrix
+  # Model outputs could change and this function will need to be updated
   # Input Format: Tibble with columns group=(1:7), ts=, s=# of servers
   
   # Specifically designed for 1 week scheduling
@@ -101,9 +101,9 @@ required_matrix2 <- function(required.servers, period.stagger, period.days) {
   return(r)
 }
 
-required_matrix1 <- function(required.servers, period.stagger, period.days) {
-  # Map the format output from modelTarget to the required matrix
-  # modelTarget could change and this function will need to be updated
+shiftopt__required_matrix1 <- function(required.servers, period.stagger, period.days) {
+  # Map the format output from queuemodel_model to the required matrix
+  # Model outputs could change and this function will need to be updated
   # Input Format: Tibble with columns group=("weekday"|"weekend"), hour=0:23, s=# of servers
   
   # Specifically designed for 1 week scheduling
@@ -305,7 +305,7 @@ scenario1 <- function(required.servers, shift.setup, solver) {
   # Requirements
   # Convert from weekday/weekend format to weekly matrix
   if(shift.setup$period.days == 7) {
-    r = required_matrix2(required.servers, shift.setup$period.stagger, shift.setup$period.days)
+    r = shiftopt__required_matrix2(required.servers, shift.setup$period.stagger, shift.setup$period.days)
   } else {
     stop(sprintf('Periods of length %i currently not available', shift.setup$period.days))
   }
@@ -394,7 +394,7 @@ scenario2 <- function(required.servers, shift.setup, solver) {
   
   # Requirements
   if(shift.setup$period.days == 7) {
-    r = required_matrix2(required.servers, shift.setup$period.stagger, shift.setup$period.days)
+    r = shiftopt__required_matrix2(required.servers, shift.setup$period.stagger, shift.setup$period.days)
   } else {
     stop(sprintf('Periods of length %i currently not available', shift.setup$period.days))
   }

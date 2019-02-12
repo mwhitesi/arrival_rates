@@ -1,18 +1,17 @@
-# Name: analysis_targets.R
+# Name: queuemodel.R
 # Desc: Compute hourly rates. Plot figures
 # Author: Matt Whiteside
 # Date: Nov 20, 2018
 
-queuemodel <- new.env(parent = emptyenv())
 
-queuemodel$addTimeColumns <- function(tbl) {
+queuemodel__addTimeColumns <- function(tbl) {
   tmp = tbl %>% mutate(weekday=wday(start, label=T), ts=strftime(start, format="%H:%M", tz="UTC"),
                        wd=wday(start, label=F))
   
   return(tmp)
 }
 
-queuemodel$convertToTbl <- function(ts) {
+queuemodel__convertToTbl <- function(ts) {
   cols <- c("Event.Number", "start", "interval_length", "Event.Datetime")
   events_tbl = ts[,mget(cols)] %>% as_tibble() %>% mutate(start = as_datetime(start)) %>% 
     as_tbl_time(start) %>% arrange(start)
@@ -20,18 +19,18 @@ queuemodel$convertToTbl <- function(ts) {
   return(events_tbl)
 }
 
-queuemodel$computeArrivalRates <- function(tbl, start.date) {
+queuemodel__computeArrivalRates <- function(tbl, start.date) {
   ar_tbl = tbl %>% collapse_by("15 minutes", start_date=start.date, clean=T, side="start") %>% 
     group_by(start) %>% summarise('arrival_rate'=n())
   return(ar_tbl)
 }
 
-queuemodel$computeServiceTime <- function(tbl, start.date) {
+queuemodel__computeServiceTime <- function(tbl, start.date) {
   tt_tbl = tbl %>% collapse_by("15 minutes", start_date=start.date, clean=T, side="start")
   return(tt_tbl)
 }
 
-queuemodel$findAnomalies <- function(tbl, col) {
+queuemodel__findAnomalies <- function(tbl, col) {
   # Find outliers using sliding window on time series data
   # Adds columns to tbl
   anomly_tbl <- tbl %>%
@@ -45,23 +44,23 @@ queuemodel$findAnomalies <- function(tbl, col) {
   return(anomly_tbl)
 }
 
-queuemodel$findOutliers <- function(dt, metric, start.date='2017-01-01') {
+queuemodel__findOutliers <- function(dt, metric, start.date='2017-01-01') {
   
-  tbl <- queuemodel$convertToTbl(dt)
+  tbl <- queuemodel__convertToTbl(dt)
   
   if(metric == "arrival rates") {
-    rt <- queuemodel$computeArrivalRates(tbl, start.date)
+    rt <- queuemodel__computeArrivalRates(tbl, start.date)
     label <- 'arrival_rates'
     colnm <- 'arrival_rate'
   } else if(metric == "service time") {
-    rt <- queuemodel$computeServiceTime(tbl, start.date)
+    rt <- queuemodel__computeServiceTime(tbl, start.date)
     label <- 'service_time'
     colnm <- 'interval_length'
   } else {
     stop(paste('Unknown metric:',metric))
   }
   
-  anoms <- queuemodel$findAnomalies(rt, colnm)
+  anoms <- queuemodel__findAnomalies(rt, colnm)
   
   # Plot anomalies
   p.decomp = anoms %>% plot_anomalies()
@@ -74,7 +73,7 @@ queuemodel$findOutliers <- function(dt, metric, start.date='2017-01-01') {
   return(final)
 }
 
-queuemodel$arrivalSummary <- function(ar, file.out) {
+queuemodel__arrivalSummary <- function(ar, file.out) {
   
   rt = ar %>% group_by(weekday, ts) %>% 
     summarise(n=sum(arrival_rate), 
@@ -86,14 +85,14 @@ queuemodel$arrivalSummary <- function(ar, file.out) {
               )
   rt %>% write.csv(file = file.out)
   
-  queuemodel$makeHistogram(ar, 'arrival_rate', "arrival_rate", "Arrival Rate (# events per 15 min)", "Arrival Rate", 1)
+  queuemodel__makeHistogram(ar, 'arrival_rate', "arrival_rate", "Arrival Rate (# events per 15 min)", "Arrival Rate", 1)
   
-  queuemodel$makePlots(ar, rt, 'arrival_rate', "arrival_rate", "Arrival Rate (# events per 15 min)", "Arrival Rate")
+  queuemodel__makePlots(ar, rt, 'arrival_rate', "arrival_rate", "Arrival Rate (# events per 15 min)", "Arrival Rate")
   
   return(rt)
 }
 
-queuemodel$makeHistogram <-function(tbl, val, filename, xl, hist.title, bw=5) {
+queuemodel__makeHistogram <-function(tbl, val, filename, xl, hist.title, bw=5) {
   p = tbl %>% 
     ggplot(aes_string(x=val)) + 
     geom_histogram(binwidth=bw) +
@@ -103,7 +102,7 @@ queuemodel$makeHistogram <-function(tbl, val, filename, xl, hist.title, bw=5) {
   ggsave(paste0("data/interim/queuemodel/",filename,"__histogram.pdf"), p, dev="pdf")
 }
 
-queuemodel$makePlots <- function(tbl, rt, val, filename, y.label, plot.title) {
+queuemodel__makePlots <- function(tbl, rt, val, filename, y.label, plot.title) {
   
   for(d in wday(1:7, label=TRUE)) {
     
@@ -129,7 +128,7 @@ queuemodel$makePlots <- function(tbl, rt, val, filename, y.label, plot.title) {
   }
 }
 
-queuemodel$serviceTimeSummary <- function(st, file.out) {
+queuemodel__serviceTimeSummary <- function(st, file.out) {
   
   tmp = st %>% mutate(interval_length = interval_length/60)
   rt = tmp %>% group_by(weekday, ts) %>% 
@@ -142,14 +141,14 @@ queuemodel$serviceTimeSummary <- function(st, file.out) {
     )
   rt %>% write.csv(file = file.out)
   
-  queuemodel$makeHistogram(tmp, 'interval_length', "service_time", "Service Time (minutes)", "Service Time", 10)
+  queuemodel__makeHistogram(tmp, 'interval_length', "service_time", "Service Time (minutes)", "Service Time", 10)
   
-  queuemodel$makePlots(tmp, rt, 'interval_length', "service_time", "Service Time (minutes)", "Service Time")
+  queuemodel__makePlots(tmp, rt, 'interval_length', "service_time", "Service Time (minutes)", "Service Time")
   
   return(rt)
 }
 
-queuemodel$correlationSummary <- function(st_rates, ar_rates) {
+queuemodel__correlationSummary <- function(st_rates, ar_rates) {
   rates = inner_join(ar_rates, st_rates, by=c('weekday', 'ts'), suffix=c('.ar', '.st'))
   
   p5 = ggplot(data=rates, aes(x=p50.ar, y=p50.st)) +
@@ -163,7 +162,7 @@ queuemodel$correlationSummary <- function(st_rates, ar_rates) {
   return(rates)
 }
 
-queuemodel$trends <- function(ar, st) {
+queuemodel__trends <- function(ar, st) {
   # Compare daily arrival rates and service times to identify days that have similar demand patterns.
   
   st.911 = st
@@ -221,7 +220,7 @@ queuemodel$trends <- function(ar, st) {
   
 }
 
-model <- function(ar, st, duration.in.min=15, ar.lag=NULL, st.lag=NULL, load.threshold=0, do.plot=TRUE) {
+queuemodel__model <- function(ar, st, duration.in.min=15, service.level=0.001, ar.lag=NULL, st.lag=NULL, load.threshold=0, do.plot=TRUE) {
   
   st.911 = st
   ar.911 = ar
@@ -265,7 +264,7 @@ model <- function(ar, st, duration.in.min=15, ar.lag=NULL, st.lag=NULL, load.thr
       
       stlists = st.values %>% filter(wd == g & ts %in% st.hlabels) %>% select('values')
       arlists = ar.values %>% filter(wd == g & ts %in% ar.hlabels) %>% select('values')
-      est.servers = fitQueueModel(stlists, arlists, g, hval, load.threshold, do.plot)$servers
+      est.servers = queuemodel__fitQueueModel(stlists, arlists, g, hval, load.threshold, service.level, do.plot)$servers
       
       print(sprintf("Group: %s, ts: %i, servers: %i", g, hval, est.servers))
       
@@ -301,11 +300,13 @@ model <- function(ar, st, duration.in.min=15, ar.lag=NULL, st.lag=NULL, load.thr
     ggsave("data/interim/plot_required_crews.pdf", p, height=8.5, width=11)
   }
   
+  
   return(required.servers)
   
 }
 
-fitQueueModel <- function(st.lists, ar.lists, group.label, hour, load.threshold, service.level, do.plots=TRUE) {
+
+queuemodel__fitQueueModel <- function(st.lists, ar.lists, group.label, hour, load.threshold, service.level, do.plots=TRUE) {
   
   st.list = unlist(st.lists)
   ar.list = unlist(ar.lists)
@@ -345,7 +346,7 @@ fitQueueModel <- function(st.lists, ar.lists, group.label, hour, load.threshold,
     dev.off()
   }
   
-  ar.res = rate_summary(ar.list)
+  ar.res = queuemodel__rate_summary(ar.list)
   st.mean = mean(st.list)
   
   # Populate model
@@ -361,7 +362,6 @@ fitQueueModel <- function(st.lists, ar.lists, group.label, hour, load.threshold,
   s.lowerbound = round(rho/.8) # Make sure utilization proportion is less than 1 to make this work
   
   pw = 1
-  service.level = 0.001
   s=s.lowerbound
   pw = erlang_c_wait_probability(s,rho)
   while(pw > service.level) {
@@ -372,12 +372,11 @@ fitQueueModel <- function(st.lists, ar.lists, group.label, hour, load.threshold,
   # Try again with faster service times reflecting low system load
   if(s < load.threshold) {
     pw = pa = 1
-    service.level = 0.001
     s=s.lowerbound
-    pw = erlang_c_wait_probability(s,rho.fast)
+    pw = queuemodel__erlang_c_wait_probability(s,rho.fast)
     while(pw > service.level) {
       s=s+1
-      pw = erlang_c_wait_probability(s,rho.fast)
+      pw = queuemodel__erlang_c_wait_probability(s,rho.fast)
     }
   }
   
@@ -386,7 +385,7 @@ fitQueueModel <- function(st.lists, ar.lists, group.label, hour, load.threshold,
     
     # Plot queue performance for different number of servers
     mmcs = tibble(s=s.lowerbound:(s+5), lambda=lambda, mu=mu)
-    mmcs %<>% rowwise() %>% do(queue_performance(s=.$s, lambda=.$lambda, mu=.$mu))
+    mmcs %<>% rowwise() %>% do(queuemodel__queue_performance(s=.$s, lambda=.$lambda, mu=.$mu))
     
     plot.width=30
     
@@ -473,11 +472,11 @@ fitQueueModel <- function(st.lists, ar.lists, group.label, hour, load.threshold,
   return(list(servers=s))
 }
 
-wrapper <- function(x, ...) {
+queuemodel__wrapper <- function(x, ...) {
   paste(strwrap(x, ...), collapse = "\n")
 }
 
-erlang_b_wait_probability <- function(s,rho) {
+queuemodel__erlang_b_wait_probability <- function(s,rho) {
   # Probability of delay when new event arrives
   sigma = sum(sapply(0:s, function(i) rho^i/factorial(i)))
   B = (rho^s)/factorial(s)
@@ -488,7 +487,7 @@ erlang_b_wait_probability <- function(s,rho) {
 }
 
 
-erlang_c_wait_probability <- function(s,rho) {
+queuemodel__erlang_c_wait_probability <- function(s,rho) {
   # Probability of delay when new event arrives
   sigma = sum(sapply(0:(s-1), function(i) rho^i/factorial(i)))
   C = (rho^s)/(factorial(s-1)*(s-rho))
@@ -498,95 +497,51 @@ erlang_c_wait_probability <- function(s,rho) {
   return(prob.wait)
 }
 
-queue_performance <- function(s,lambda,mu) {
+queuemodel__queue_performance <- function(s,lambda,mu) {
   params.mmc = NewInput.MMC(lambda = lambda, mu = mu , n=1, method = 0 , c=s)
   mmc=QueueingModel(params.mmc)
   
-  C=erlang_c_wait_probability(s,lambda/mu)
-  B=erlang_b_wait_probability(s, lambda/mu)
+  C=queuemodel__erlang_c_wait_probability(s,lambda/mu)
+  B=queuemodel__erlang_b_wait_probability(s, lambda/mu)
   
   return(data.frame(s=s, C=C, B=B, Lq=mmc$Lq, L=mmc$L, W=mmc$W, Wq=mmc$Wq, P0=mmc$Pn[1]))
 }
 
-rate_summary <- function(l) {
+queuemodel__rate_summary <- function(l) {
   return(list("mean"=mean(l), "sd"=sd(l), 
               "p50"=quantile(l,.5), "p90"=quantile(l,.9)))
 }
 
-plotLongTermRollingTrend <- function(rt, ylab="Arrival Rate", b=168) {
+# plotLongTermRollingTrend <- function(rt, ylab="Arrival Rate", b=168) {
+#   
+#   # Aggregate and smooth data to make it easier to visualize
+#   agg.rt = rollapply(rt$arrival_rate, b, by=b, FUN = sum, align="right")
+#   agg.ts = rt[seq(b,nrow(rt),by=b),"start"]
+#   d = agg.ts %>% add_column(arrival_rate=agg.rt)
+#   
+#   ma = d %>% mutate(
+#     monthly_median = rollmedian(arrival_rate, k=5, fill=NA)
+#   )
+#   ma %>% gather(metric, value, arrival_rate:monthly_median) %>%
+#     ggplot(aes(start, value, linetype=metric)) +
+#     geom_line()+
+#     scale_color_grey()+
+#     theme(panel.border = element_blank(),
+#           panel.background = element_blank(),
+#           panel.grid.minor = element_line(colour = "grey90"),
+#           panel.grid.major = element_line(colour = "grey90"),
+#           panel.grid.major.x = element_line(colour = "grey90"),
+#           axis.text = element_text(size = 10),
+#           axis.title = element_text(size = 12, face = "bold"),
+#           strip.text = element_text(size = 12, face = "bold")) +
+#     labs(x = "Date", y = "Weekly Arrival Rate")
+# }
+
+queuemodel__convert <- function(dt, myorigin = "2018-12-9 00:00:00") {
   
-  # Aggregate and smooth data to make it easier to visualize
-  agg.rt = rollapply(rt$arrival_rate, b, by=b, FUN = sum, align="right")
-  agg.ts = rt[seq(b,nrow(rt),by=b),"start"]
-  d = agg.ts %>% add_column(arrival_rate=agg.rt)
+  myorigin = as.POSIXct(myorigin, tz="UTC")
+  dt %<>% arrange(group, ts) %>% mutate(window = myorigin + hms(paste0(ts, ':00')) + (group-1)*24*60*60 )
   
-  ma = d %>% mutate(
-    monthly_median = rollmedian(arrival_rate, k=5, fill=NA)
-  )
-  ma %>% gather(metric, value, arrival_rate:monthly_median) %>%
-    ggplot(aes(start, value, linetype=metric)) +
-    geom_line()+
-    scale_color_grey()+
-    theme(panel.border = element_blank(),
-          panel.background = element_blank(),
-          panel.grid.minor = element_line(colour = "grey90"),
-          panel.grid.major = element_line(colour = "grey90"),
-          panel.grid.major.x = element_line(colour = "grey90"),
-          axis.text = element_text(size = 10),
-          axis.title = element_text(size = 12, face = "bold"),
-          strip.text = element_text(size = 12, face = "bold")) +
-    labs(x = "Date", y = "Weekly Arrival Rate")
+  dt = data.table(dt %>% select(window, count=s))
+  return(dt)
 }
-
-
-regressionTarget <- function(d, duration.in.min=15, do.plot=TRUE) {
-  
-  setkey(hd, window)
-  
-  # Start and end on sunday
-  startday = min(hd[weekly.bin == 1,window])
-  endday = max(hd[weekly.bin == 7,window])
-  d = hd[window >= startday & window <= endday]
-  
-  # Fill in empty values
-  dur.m = paste(duration.in.min, "min")
-  periods = seq(from=startday,to=endday,by=dur.m)
-  empty = data.table(window=periods, count=0)
-  setkey(empty, window)
-  d2 = empty[d][, count:=ifelse(is.na(i.count), count, i.count)]
-  
-  # Create time series object
-  # the seasonalities that we are interested are sub-weekly (trying to only fit one week)
-  hourly=60/duration.in.min
-  yms = msts(d2[,count], seasonal.periods = c(24*hourly, 168*hourly))
-  
-  # Use AICc to find the optimal number of fast-fourier terms to model seasonality
-  # Num of fourier terms were selected using AICc
-  fit <- tslm(yms ~ fourier(yms, K = c(7,6)))
-  
-  
-  # Lots of uncaptured patterns/correlation in residuals, but at least residuals are centered around 0
-  # normality is plasuible - slight fat tails
-  # Not sure how this affects a fourier model
-  # checkresiduals(fit)
-  # qqnorm(residuals(fit))
-  # qqline(residuals(fit))
-  
-  pred <- forecast(fit, 
-                   data.frame(fourier(yms, K = c(7,6), h=168*60/duration.in.min)),
-                   level=c(99.5))
-  
-  date.range = as.POSIXct(startday) + as.numeric(time(pred$upper))*7*24*60*60
-  starts = addTimeColumns(data.table(start=date.range))
-  
-  reqd = data.table(starts, pred$upper)
-  names(reqd) = c("start", "weekday", "ts", "group", "s")
-  
-  reqd = reqd[,.(group,ts,s)]
-  
-  
-  return(reqd)
-}
-
-
-
