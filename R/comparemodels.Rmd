@@ -1,6 +1,10 @@
 ---
-title: "comparemodels"
-output: html_document
+title: "Comparison of Queue and Regression-based Modelling"
+date: "February 13, 2019"
+output: 
+  html_document:
+    toc: true
+    toc_float: true
 ---
 
 ```{r setup, include=FALSE}
@@ -12,47 +16,60 @@ knitr::opts_chunk$set(echo = FALSE, fig.width=12, fig.height=7)
 
 # Load datasets
 demand = drake::readd(demand)
-qmodU = drake::readd(qmodU)
-rmodU = drake::readd(rmodU)
+modQ = modeltest__makeQ()
+modR = modeltest__makeR()
 
-# Add datetime column
-qmodU = queuemodel__convert(qmodU)
-rmodU = queuemodel__convert(rmodU)
 
-setkey(qmodU, window)
-setkey(demand, window)
-setkey(rmodU, window)
-
-# Round regression targets
-rmodU[,count:=ceiling(count)]
-
-# Merge demand & unit data.tables
 start.ts = min(demand$window)
 end.ts = max(demand$window)
+setkey(demand, window)
 
-qmodU = shifts$fill(qmodU, start.ts, end.ts)
-rmodU = shifts$fill(rmodU, start.ts, end.ts)
+# Round regression targets
+modR = lapply(modR, function(rmodU) rmodU[,s:=ceiling(s)])
 
-qmodDT = shifts$shift_join(qmodU, demand)
-rmodDT = shifts$shift_join(rmodU, demand)
+# Merge data with demand values
+prep <- function(modU) {
+  # Add datetime column
+  modU = queuemodel__convert(modU)
+  setkey(modU, window)
 
-qmodDT = shifts$trim(qmodDT)
-rmodDT = shifts$trim(rmodDT)
+  # Stretch weekly values to year
+  modU = shifts$fill(modU, start.ts, end.ts)
+  
+  # Join to demand
+  modDT = shifts$shift_join(modU, demand)
+  
+  # Remove first/last day
+  modDT = shifts$trim(modDT)
+  
+  return(modDT)
+}
 
-res.rmod = shifts$performance(rmodDT)
-res.qmod = shifts$performance(qmodDT)
+modQ = lapply(modQ, prep)
+modR = lapply(modR, prep)
 
-wk.rmod = shifts$weekly_aggregate(rmodDT, 60)
-wk.qmod = shifts$weekly_aggregate(qmodDT, 60)
+# Compute performance
+res.modQ = lapply(modQ, shifts$performance)
+res.modR = lapply(modR, shifts$performance)
+
+# Compute weekly averages/metrics for best case
+wk.rmod = shifts$weekly_aggregate(modR[['p0.991']], 60)
+wk.qmod = shifts$weekly_aggregate(modQ[['p0.001']], 60)
+
+# Yearly stats
+rmod = modR[['p0.991']]
+qmod = modQ[['p0.001']]
+
+start.ts = min(rmod$window)
+end.ts = max(rmod$window)
+
 
 ```
 
 
-# Demand Modelling
+# Models
 
-## Models
-
-Two methods were tried for fitting and estimating required units in each period given a service level (or prediction interval):
+Two methods were tried for fitting and estimating required units in each period given a service level (or prediction interval) in a single week (our planning duration):
 
   1. Erlang-C queue model.
     - Inputs: Weekly Arrival rate and Service Time in each 15 minute period. 
@@ -65,23 +82,34 @@ Two methods were tried for fitting and estimating required units in each period 
     - Inputs: Number of concurrent units on event for each 15 minute period in the whole study duration
     - Parameters: prediction interval (the upper prediction interval bound determines the final required number of units)
   
-## Performance
+# Performance
   
-### General
+## General
   
   
 ```{r perform1, warning=FALSE}
 
-rownms <- c('Queue Model','FFT Regression Model')
+f1 <- function(res.modQ, res.modR) {
+  model = c(rep('Queue Model', length(res.modQ)), rep('FFT Regression Model', length(res.modR)))
+  sl = c(names(res.modQ), names(res.modR))
+  thrs = c(sapply(res.modQ[names(res.modQ)], `[[`, 'StaffedTotalHrs'),
+           sapply(res.modR[names(res.modR)], `[[`, 'StaffedTotalHrs'))
+  uhrs = c(sapply(res.modQ[names(res.modQ)], `[[`, 'UnitAvailableTotalHrs'),
+           sapply(res.modR[names(res.modR)], `[[`, 'UnitAvailableTotalHrs'))
+  upr = c(sapply(res.modQ[names(res.modQ)], `[[`, 'UnitAvailableProportion'),
+           sapply(res.modR[names(res.modR)], `[[`, 'UnitAvailableProportion'))
+  
+  df1 = data.frame(a=model, b=sl, c=thrs, d=uhrs, f=upr)
+  
+  return(df1)
+}
 
-colnms <- c('Total Hours', "Hours Unit Available", "Proportion Unit Available")
-df1 = data.frame(A=c(res.qmod$StaffedTotalHrs, res.rmod$StaffedTotalHrs), 
-                 B=c(res.qmod$UnitAvailableTotalHrs, res.rmod$UnitAvailableTotalHrs),
-                 C=c(res.qmod$UnitAvailableProportion, res.rmod$UnitAvailableProportion),
-                 row.names = rownms)
-start.ts = min(qmodDT$window)
-end.ts = max(qmodDT$window)              
-knitr::kable(df1, caption=paste("Performance Metrics for", start.ts,' - ', end.ts), row.names = TRUE, col.names = colnms)
+df1 = f1(res.modQ, res.modR)
+
+colnms <- c('Model','Service Level', 'Total Hours', 'Hours Unit Available', 'Proportion Unit Available')
+            
+knitr::kable(df1, caption=paste("Performance Metrics for", start.ts,' - ', end.ts), row.names = FALSE, col.names = colnms) %>%
+  kable_styling()
 
 ```
 
@@ -98,7 +126,7 @@ knitr::kable(df1, caption=paste("Performance Metrics for", start.ts,' - ', end.t
   
 
 <div class="superbigimage">
-```{r plot1, warning=FALSE}
+```{r plot1, warning=FALSE, fig.cap='*Showing service level p0.001 in queue model and p0.991 prediction interval for regression model'}
 
 nap = wk.rmod[wk.qmod, .(window=window, fft.regression=1-UnitAvailableProportion, queue.model=1-i.UnitAvailableProportion)]
 
@@ -109,23 +137,71 @@ p
 ````
 </div>
 
-### Utilization
+  
+<div class="superbigimage">
+```{r plot1.1, warning=FALSE, fig.width=12, fig.height=12}
+
+ggplot(data=df1, aes(x=c, y=f, group=a)) +
+  geom_line(aes(color=a,linetype=a)) +
+  geom_point(aes(shape=a)) +
+  geom_text(aes(label=b),hjust=1, vjust=1) +
+  labs(y="Proportion Unit Available", x="Annual Unit Hours") + 
+  theme(panel.background = element_rect(fill="#ffffff", colour=NA),
+        axis.title.x = element_text(vjust=-0.2), axis.title.y=element_text(vjust=1.5),
+        title = element_text(vjust=1.2),
+        panel.border = element_blank(),
+        axis.line =element_line(size=0.5, colour="grey80"),
+        panel.grid.minor = element_blank(),
+        panel.grid.major.x = element_line(size=0.5, colour="grey80"),
+        panel.grid.major.y = element_line(size=0.5, colour="grey80"),
+        axis.ticks = element_blank(),
+        legend.position = "bottom", 
+        axis.title = element_text(size=rel(0.8)),
+        strip.text = element_text(size=rel(1)),
+        strip.background=element_rect(fill="#ffffff", colour=NA),
+        panel.spacing.y = unit(1.5, "lines"),
+        legend.key = element_blank(),
+        legend.title=element_blank())
+
+
+````
+</div>
+  
+
+## Utilization
 
 ```{r perform2, warning=FALSE}
 
+f2 <- function(res.modQ, res.modR, metric) {
+  model = c(rep('Queue Model', length(res.modQ)), rep('FFT Regression Model', length(res.modR)))
+  sl = c(names(res.modQ), names(res.modR))
+  ave = c(sapply(res.modQ[names(res.modQ)], function(x) sapply(x[metric], `[[`, 'mean')),
+          sapply(res.modR[names(res.modR)], function(x) sapply(x[metric], `[[`, 'mean')))
+  p50 = c(sapply(res.modQ[names(res.modQ)], function(x) sapply(x[metric], `[[`, 'p50')),
+          sapply(res.modR[names(res.modR)], function(x) sapply(x[metric], `[[`, 'p50')))
+  p90 = c(sapply(res.modQ[names(res.modQ)], function(x) sapply(x[metric], `[[`, 'p90')),
+          sapply(res.modR[names(res.modR)], function(x) sapply(x[metric], `[[`, 'p90')))
+  max = c(sapply(res.modQ[names(res.modQ)], function(x) sapply(x[metric], `[[`, 'max')),
+          sapply(res.modR[names(res.modR)], function(x) sapply(x[metric], `[[`, 'max')))
+  min = c(sapply(res.modQ[names(res.modQ)], function(x) sapply(x[metric], `[[`, 'min')),
+          sapply(res.modR[names(res.modR)], function(x) sapply(x[metric], `[[`, 'min')))
+  
+  df = data.frame(a=model, b=sl, c=ave, d=p50, e=p90, f=max, g=min)
+  
+  return(df)
+}
 
-colnms <- c("Mean", "Median", "90th Percentile", "Max", "Min")
-df2 = data.frame(A=c(res.qmod$Utilization$mean, res.rmod$Utilization$mean),
-                 B=c(res.qmod$Utilization$p50, res.rmod$Utilization$p50),
-                 C=c(res.qmod$Utilization$p90, res.rmod$Utilization$p90),
-                 D=c(res.qmod$Utilization$max, res.rmod$Utilization$max),
-                 E=c(res.qmod$Utilization$min, res.rmod$Utilization$min),
-                 row.names = rownms)
-knitr::kable(df2, caption=paste("Utilization Metrics for", start.ts,' - ', end.ts), row.names = TRUE, col.names = colnms)
+df2 = f2(res.modQ, res.modR, 'Utilization')
+
+colnms <- c("Model", "Service Level", "Mean", "Median", "90th Percentile", "Max", "Min")
+knitr::kable(df2, caption=paste("Utilization Metrics for", start.ts,' - ', end.ts), row.names = FALSE, col.names = colnms) %>%
+  kable_styling()
+
 
 ```
+
 <div class="superbigimage">
-```{r plot2} 
+```{r plot2, fig.cap='*Showing service level p0.001 in queue model and p0.991 prediction interval for regression model'} 
 
 cols = c('fft.regression','queue.model')
 ut = wk.rmod[wk.qmod, .(window=window, fft.regression=ut.mean, queue.model=i.ut.mean)]
@@ -135,20 +211,18 @@ p = performance__plot_weekly_multi_metric_line(ut, c('fft.regression','queue.mod
 p
 ```
 </div>
+  
 
-### Availability
+## Availability
 
 ```{r perform3, warning=FALSE}
 
+df3 = f2(res.modQ, res.modR, 'Availability')
 
-colnms <- c("Mean", "Median", "90th Percentile", "Max", "Min")
-df2 = data.frame(A=c(res.qmod$Availability$mean, res.rmod$Availability$mean),
-                 B=c(res.qmod$Availability$p50, res.rmod$Availability$p50),
-                 C=c(res.qmod$Availability$p90, res.rmod$Availability$p90),
-                 D=c(res.qmod$Availability$max, res.rmod$Availability$max),
-                 E=c(res.qmod$Availability$min, res.rmod$Availability$min),
-                 row.names = rownms)
-knitr::kable(df2, caption=paste("Availability Metrics for", start.ts,' - ', end.ts), row.names = TRUE, col.names = colnms)
+colnms <- c("Model", "Service Level", "Mean", "Median", "90th Percentile", "Max", "Min")
+
+knitr::kable(df3, caption=paste("Availability Metrics for", start.ts,' - ', end.ts), row.names = FALSE, col.names = colnms) %>%
+  kable_styling()
 
 ```
 
@@ -161,35 +235,104 @@ Some of the largest difference between estimated and actual units occurred on:
   
   
 <div class="superbigimage">
-```{r plot3} 
+```{r plot3, fig.cap='*Showing service level p0.001 in queue model and p0.991 prediction interval for regression model'} 
 
 cols = c('fft.regression','queue.model')
 av = wk.rmod[wk.qmod, .(window=window, fft.regression=av.mean, queue.model=i.av.mean)]
 
-p = performance__plot_weekly_multi_metric_line(av, c('fft.regression','queue.model'), title='Average Availability',
+p = performance__plot_weekly_multi_metric_line(av, cols, title='Average Availability',
                                                ylabel = '# Units')
 p
 ```
 </div>
   
 
-### Model Evaluation
+<div class="superbigimage">
+```{r plot3.1, echo=FALSE}
+
+duration.in.min = 15
+
+avDT = rmod[qmod, .(window=window, fft.regression=av, queue.model=i.av)]
+cols = c('fft.regression','queue.model')
+
+p = performance__plot_hour_histogram(avDT, cols, duration.in.min)
+
+p
+
+```
+</div>
+  
+
+<div class="superbigimage">
+```{r plot3.2, echo=FALSE}
+
+p = performance__plot_availability_cumulative_distribution(avDT, cols)
+
+p
+
+```
+</div>
+  
+
+
+```{r table3.3, echo=FALSE}
+
+dt1 = performance__table_availability_cumulative_distribution(qmod)
+dt2 = performance__table_availability_cumulative_distribution(rmod)
+
+setkey(dt1, av)
+setkey(dt2, av)
+
+avdt = merge(dt1, dt2, all=TRUE)
+avdt = avdt[av >= 0]
+
+avdt = cbind(c('', rep(c('Weekday', 'Weekend', '% Units', '% >= Units'),2)),
+             c('', rep('Queue Model',4), rep('FFT Regression Model',4)),
+             t(avdt))
+
+ord = c(4,8,5,9,2,6,3,7)
+avdtbody = avdt[ord,]
+
+knitr::kable(as.data.frame(avdtbody), caption=paste("Unit Availability for", start.ts,' - ', end.ts), row.names=FALSE, col.names=avdt[1,]) %>%
+  kableExtra::kable_styling(bootstrap_options = "bordered") %>%
+  kableExtra::column_spec(1:2, width = "15em; min-width: 15em;") %>%
+  kableExtra::scroll_box(width = "800px", height = "100%")
+  
+
+```
+
+  
+
+## Model Evaluation
   
 ```{r perform4, echo=FALSE, warning=FALSE}
+
+  f3 <- function(res.modQ, res.modR, metric) {
+    model = c(rep('Queue Model', length(res.modQ)), rep('FFT Regression Model', length(res.modR)))
+    sl = c(names(res.modQ), names(res.modR))
+    ave = c(sapply(res.modQ[names(res.modQ)], function(x) sapply(x[metric], `[[`, 'mean')),
+            sapply(res.modR[names(res.modR)], function(x) sapply(x[metric], `[[`, 'mean')))
+    sd = c(sapply(res.modQ[names(res.modQ)], function(x) sapply(x[metric], `[[`, 'sd')),
+            sapply(res.modR[names(res.modR)], function(x) sapply(x[metric], `[[`, 'sd')))
+    rmse = c(sapply(res.modQ[names(res.modQ)], function(x) sapply(x[metric], `[[`, 'rmse')),
+            sapply(res.modR[names(res.modR)], function(x) sapply(x[metric], `[[`, 'rmse')))
+    tot = c(sapply(res.modQ[names(res.modQ)], function(x) sapply(x[metric], `[[`, 'tot')),
+             sapply(res.modR[names(res.modR)], function(x) sapply(x[metric], `[[`, 'tot')))
+    
+    df = data.frame(a=model, b=sl, c=ave, d=sd, e=rmse, f=tot)
+    
+    return(df)
+  }
+
+  oc = f3(res.modQ, res.modR, 'OvercapacityUnitHrs')
+  uc = f3(res.modQ, res.modR, 'UndercapacityUnitHrs')
+  df4= cbind(oc,uc[c('c','d','e', 'f')])
   
-  
-  colnms <- c("Overcapacity Mean", "Overcapacity Standard Deviation", "Overcapacity RMSE", "Overcapacity Total",
+  colnms <- c("Model", "Service Level", "Overcapacity Mean", "Overcapacity Standard Deviation", "Overcapacity RMSE", "Overcapacity Total",
               "Undercapacity Mean", "Undercapacity Standard Deviation", "Undercapacity RMSE", "Undercapacity Total")
-  df3 = data.frame(A=c(res.qmod$OvercapacityUnitHrs$mean, res.rmod$OvercapacityUnitHrs$mean),
-                   B=c(res.qmod$OvercapacityUnitHrs$sd, res.rmod$OvercapacityUnitHrs$sd),
-                   C=c(res.qmod$OvercapacityUnitHrs$rmse, res.rmod$OvercapacityUnitHrs$rmse),
-                   D=c(res.qmod$OvercapacityUnitHrs$tot, res.rmod$OvercapacityUnitHrs$tot),
-                   E=c(res.qmod$UndercapacityUnitHrs$mean, res.rmod$UndercapacityUnitHrs$mean),
-                   F=c(res.qmod$UndercapacityUnitHrs$sd, res.rmod$UndercapacityUnitHrs$sd),
-                   G=c(res.qmod$UndercapacityUnitHrs$rmse, res.rmod$UndercapacityUnitHrs$rmse),
-                   H=c(res.qmod$UndercapacityUnitHrs$tot, res.rmod$UndercapacityUnitHrs$tot),
-                   row.names = rownms)
-  knitr::kable(df3, caption=paste("Error Metrics for", start.ts,' - ', end.ts), row.names = TRUE, col.names = colnms)
+
+  knitr::kable(df4, caption=paste("Error Metrics for", start.ts,' - ', end.ts), row.names = FALSE, col.names = colnms) %>%
+    kable_styling()
   
 ```
 

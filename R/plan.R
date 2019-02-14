@@ -46,7 +46,7 @@ dir.create('data/interim/comparemodels/', showWarnings=FALSE)
 comparemodels_plan <- drake_plan(
   modelreport = rmarkdown::render(
     knitr_in("R/comparemodels.Rmd"),
-    output_file = file_out("R/comparemodels/unit_requirement_modelling.docx"),
+    output_file = file_out("R/comparemodels/unit_requirement_modelling.html"),
     quiet = TRUE
   )
 )

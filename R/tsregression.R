@@ -41,7 +41,7 @@ tsregression__fitFFTModel <- function(hd, duration.in.min=15, prediction.interva
                    level=c(prediction.interval))
   
   date.range = as.POSIXct(startday) + as.numeric(time(pred$upper))*7*24*60*60
-  starts = addTimeColumns(data.table(start=date.range))
+  starts = queuemodel__addTimeColumns(data.table(start=date.range))
   
   reqd = data.table(starts, pred$upper)
   names(reqd) = c("start", "weekday", "ts", "group", "s")

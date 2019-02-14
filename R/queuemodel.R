@@ -363,10 +363,10 @@ queuemodel__fitQueueModel <- function(st.lists, ar.lists, group.label, hour, loa
   
   pw = 1
   s=s.lowerbound
-  pw = erlang_c_wait_probability(s,rho)
+  pw = queuemodel__erlang_c_wait_probability(s,rho)
   while(pw > service.level) {
     s=s+1
-    pw = erlang_c_wait_probability(s,rho)
+    pw = queuemodel__erlang_c_wait_probability(s,rho)
   }
   
   # Try again with faster service times reflecting low system load
