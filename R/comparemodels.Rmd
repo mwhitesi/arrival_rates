@@ -16,8 +16,11 @@ knitr::opts_chunk$set(echo = FALSE, fig.width=12, fig.height=7)
 
 # Load datasets
 demand = drake::readd(demand)
-modQ = modeltest__makeQ()
-modR = modeltest__makeR()
+# Load data into memory
+ar2 = drake::readd(ar2)
+st2 = drake::readd(st2)
+modQ = modeltest__makeQ(ar2, st2)
+modR = modeltest__makeR(demand)
 
 
 start.ts = min(demand$window)
@@ -293,9 +296,12 @@ avdt = cbind(c('', rep(c('Weekday', 'Weekend', '% Units', '% >= Units'),2)),
 ord = c(4,8,5,9,2,6,3,7)
 avdtbody = avdt[ord,]
 
+nc = ncol(avdtbody)
+
 knitr::kable(as.data.frame(avdtbody), caption=paste("Unit Availability for", start.ts,' - ', end.ts), row.names=FALSE, col.names=avdt[1,]) %>%
   kableExtra::kable_styling(bootstrap_options = "bordered") %>%
-  kableExtra::column_spec(1:2, width = "15em; min-width: 15em;") %>%
+  kableExtra::column_spec(1:2, width = "12em; min-width: 12em;") %>%
+  kableExtra::column_spec(3:nc, width = "2.5em; min-width: 2.5em;") %>%
   kableExtra::scroll_box(width = "800px", height = "100%")
   
 

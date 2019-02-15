@@ -3,12 +3,23 @@
 # Author: Matt Whiteside
 # Date: Nov 19, 2018
 
+# Load sources
+source('R/packages.R')
+source('R/timeutils.R')
+source('R/dataload.R')
+source('R/queuemodel.R')
+source('R/tsregression.R')
+source('R/performance.R')
+source('R/shifts.R')
+source('R/shiftopt.R')
+
 
 start.date = '2017-11-01'
 duration.in.min = 15
 
 # Load historical data
 dir.create('data/interim/dataload/', showWarnings=FALSE)
+
 data_plan <- drake_plan(
   resp = dataload__loadEventData(file_in("data/raw/EDMO_Metro_Response_Extract/Report 1.csv")),
   histU = dataload__loadUNIT_WKLOAD(file_in("data/raw/EDMO_unit_workload.csv"), duration.in.min, do.plot=TRUE),
@@ -32,7 +43,7 @@ queuemodel_plan <- drake_plan(
   st_summary = queuemodel__serviceTimeSummary(st2, file_out("data/processed/EDMO_service_time__2017-11-01_2018-11-01.csv")),
   st_ar_corr = queuemodel__correlationSummary(st_summary, ar_summary),
   st_pvals = queuemodel__trends(ar2, st2),
-  qmodU = queuemodel__model(ar2, st2, duration.in.min, service.level, ar.lag, st.lag, load.threshold, do.plot=TRUE)
+  qmodU = queuemodel__model(ar2, st2, duration.in.min, service.level, ar.lag, st.lag, load.threshold, do.plot=FALSE)
 )
 
 pred.int = .991 # Prediction interval to consider when predicting required number of units
@@ -46,35 +57,55 @@ dir.create('data/interim/comparemodels/', showWarnings=FALSE)
 comparemodels_plan <- drake_plan(
   modelreport = rmarkdown::render(
     knitr_in("R/comparemodels.Rmd"),
-    output_file = file_out("R/comparemodels/unit_requirement_modelling.html"),
+    output_file = file_out("data/interim/comparemodels/unit_requirement_modelling.html"),
     quiet = TRUE
   )
 )
 
 
-# # Allowable shift types
-# blockshift.setup <- list(
-#   shift.types = c('week_12hr', '4day_10.5hr', '2day_10.5hr'),
-#   period.stagger = duration.in.min,
-#   period.days = 7,
-#   daily.sc.window = c(5*60,20*60),
-#   max.sc = 4
-# )
-# solver <- 'symphony'
-# shifts_plan <- drake_plan(
-#   crews = (servs, shift.setup, solver)
-#   
-# )
+# Allowable shift types
+blockshift.setup <- list(
+  shift.types = c('week_12hr', '4day_10.5hr', '2day_10.5hr'), # Allowable shift types
+  period.stagger = duration.in.min, # Time increment that shifts can start
+  period.days = 7, # Planning period length in days
+  daily.sc.window = c(5*60,20*60), # Window that a shift change can occur in minutes
+  max.sc = 4 # Max number of start/stops in any time block
+)
+freeshift.setup <- list(
+  shift.types = c('12hr', '10.5hr', '8.4hr'),
+  period.stagger = duration.in.min,
+  period.days = 7,
+  daily.sc.window = c(5*60,20*60),
+  max.sc = 4
+)
+solver <- 'symphony'
+shifts_plan <- drake_plan(
+  crewsQmBl = shiftopt__optimize(qmodU, blockshift.setup, solver),
+  crewsQmFr = shiftopt__optimize(qmodU, freeshift.setup, solver),
+  crewsRmBl = shiftopt__optimize(rmodU, blockshift.setup, solver),
+  crewsRmFr = shiftopt__optimize(rmodU, freeshift.setup, solver)
+)
 
-whole_plan <- bind_plans(data_plan, queuemodel_plan, regressionmodel_plan, comparemodels_plan)
+
+# Compare optimized shifts vs existing shift patterns
+dir.create('data/interim/compareshifts/', showWarnings=FALSE)
+comparemodels_plan <- drake_plan(
+  modelreport = rmarkdown::render(
+    knitr_in("R/comparemodels.Rmd"),
+    output_file = file_out("data/interim/comparemodels/unit_requirement_modelling.html"),
+    quiet = TRUE
+  )
+)
+
+whole_plan <- bind_plans(data_plan, queuemodel_plan, regressionmodel_plan, comparemodels_plan, shifts_plan)
 
 drake_cache_log_file(file = "drake_cache_log.txt")
 
 
 script.dir <- getwd()
-ff <- file.path(script.dir, "data/interim/comparemodels/unit_requirement_modelling.html")
+ff <- file.path(script.dir, "data/interim/compareshifts/shift_comparison.html")
 rmarkdown::render(
-  "R/comparemodels.Rmd",
+  "R/compareshifts.Rmd",
   output_file = ff
 )
 

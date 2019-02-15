@@ -48,6 +48,7 @@ tsregression__fitFFTModel <- function(hd, duration.in.min=15, prediction.interva
   
   reqd = reqd[,.(group,ts,s)]
   
+  reqd = reqd %>% mutate(tp=as.integer(as.factor(reqd$ts)), s=ceiling(s)) %>% arrange(group, tp)
   
   return(reqd)
 }

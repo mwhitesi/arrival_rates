@@ -400,7 +400,7 @@ queuemodel__fitQueueModel <- function(st.lists, ar.lists, group.label, hour, loa
             axis.text = element_text(size = 10),
             axis.title = element_text(size = 12, face = "bold"),
             strip.text = element_text(size = 12, face = "bold")) +
-      ggtitle(wrapper('Probability Unit Available (Erlang C model)', plot.width)) +
+      ggtitle(queuemodel__wrapper('Probability Unit Available (Erlang C model)', plot.width)) +
       ylab('Probability') +
       xlab('Number of Units Staffed')
     
@@ -415,7 +415,7 @@ queuemodel__fitQueueModel <- function(st.lists, ar.lists, group.label, hour, loa
     #         axis.text = element_text(size = 10),
     #         axis.title = element_text(size = 12, face = "bold"),
     #         strip.text = element_text(size = 12, face = "bold")) +
-    #   ggtitle(wrapper('Estimated Event Time', plot.width)) +
+    #   ggtitle(queuemodel__wrapper('Estimated Event Time', plot.width)) +
     #   ylab('Time Period') +
     #   xlab('Number of Units Staffed')
     # 
@@ -430,7 +430,7 @@ queuemodel__fitQueueModel <- function(st.lists, ar.lists, group.label, hour, loa
     #         axis.text = element_text(size = 10),
     #         axis.title = element_text(size = 12, face = "bold"),
     #         strip.text = element_text(size = 12, face = "bold")) +
-    #   ggtitle(wrapper('Estimated Time Waiting for Available Unit', plot.width)) +
+    #   ggtitle(queuemodel__wrapper('Estimated Time Waiting for Available Unit', plot.width)) +
     #   ylab('Time Period') +
     #   xlab('Number of Units Staffed')
     # 
@@ -445,7 +445,7 @@ queuemodel__fitQueueModel <- function(st.lists, ar.lists, group.label, hour, loa
     #         axis.text = element_text(size = 10),
     #         axis.title = element_text(size = 12, face = "bold"),
     #         strip.text = element_text(size = 12, face = "bold")) +
-    #   ggtitle(wrapper('Estimated Number of Ongoing Events', plot.width)) +
+    #   ggtitle(queuemodel__wrapper('Estimated Number of Ongoing Events', plot.width)) +
     #   ylab('Number of Events') +
     #   xlab('Number of Units Staffed')
     # 
@@ -460,7 +460,7 @@ queuemodel__fitQueueModel <- function(st.lists, ar.lists, group.label, hour, loa
     #         axis.text = element_text(size = 10),
     #         axis.title = element_text(size = 12, face = "bold"),
     #         strip.text = element_text(size = 12, face = "bold")) +
-    #   ggtitle(wrapper('Estimated Number of Events Waiting for Available Unit', plot.width)) +
+    #   ggtitle(queuemodel__wrapper('Estimated Number of Events Waiting for Available Unit', plot.width)) +
     #   ylab('Number of Events') +
     #   xlab('Number of Units Staffed')
     # 

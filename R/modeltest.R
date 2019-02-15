@@ -1,4 +1,4 @@
-modeltest__makeQ <- function(levels=c(seq(0.009, 0.001, by=-0.002), seq(0.0009, 0.0001, by=-0.0002))) {
+modeltest__makeQ <- function(ar2, st2, levels=c(seq(0.009, 0.001, by=-0.002), seq(0.0009, 0.0001, by=-0.0002))) {
   #' Make multiple Queue models with a range of service levels
   #' 
   #' 
@@ -9,9 +9,6 @@ modeltest__makeQ <- function(levels=c(seq(0.009, 0.001, by=-0.002), seq(0.0009, 
   load.threshold = 35
   duration.in.min = 15
   
-  # Load data into memory
-  ar2 = readd(ar2)
-  st2 = readd(st2)
   
   # Generate models
   models <- list()
@@ -22,7 +19,7 @@ modeltest__makeQ <- function(levels=c(seq(0.009, 0.001, by=-0.002), seq(0.0009, 
   return(models)
 }
 
-modeltest__makeR <- function(p=c(seq(.95, .99, by=0.02), seq(.991, .999, by=0.002))) {
+modeltest__makeR <- function(demand, p=c(seq(.95, .99, by=0.02), seq(.991, .999, by=0.002))) {
   #' Make multiple regression models with a range of prediction intervals
   #' 
   #' 
@@ -30,8 +27,6 @@ modeltest__makeR <- function(p=c(seq(.95, .99, by=0.02), seq(.991, .999, by=0.00
   # Parameters
   duration.in.min = 15
   
-  # Load data into memory
-  demand = readd(demand)
   
   # Generate models
   models <- list()

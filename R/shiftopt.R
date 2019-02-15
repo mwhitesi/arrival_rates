@@ -41,6 +41,7 @@ shiftopt__optimize <- function(required.servers, shift.setup, solver="glpk") {
   # Solve for shifts
   ns=dim(a)[1]
   np=dim(a)[2]
+  maxsc = shift.setup[['max.sc']]
   
   optm <- MILPModel() %>%
     add_variable(x[i], i = 1:ns, type = "integer") %>%
@@ -69,7 +70,7 @@ shiftopt__optimize <- function(required.servers, shift.setup, solver="glpk") {
   shift.matrix = rbind(a[soln[,rep(i, value)],], matrix(1,nrow=n247,ncol=np))
   shift.summary = rbind(shift.summary, 
                         data.table(type=rep('week_247', n247),
-                                   n=n247,
+                                   n=1, # Only one of each? Sure
                                    cost=rep(24*7, n247)
                         )
   )

@@ -4,18 +4,21 @@ ce1d2976e1f391ae target "data/processed/EDMO_service_time__2017-11-01_2018-11-01
 a88958103155ed5c import "data/raw/EDMO_Metro_Response_Extract/Report 1.csv"
 780290fdb1167442 import "data/raw/EDMO_unit_workload.csv"
 6c50530a709a96bc import "data/raw/Profile_2019-01-25.csv"
+ece14e18dcd0edf0 import "R/comparemodels.Rmd"
 f63792a7e03b702f import addTimeColumns
 8fd9bae0a746d39b target ar
 c85d88fc56f4e042 import ar.lag
 7a3208a27cbfef14 target ar_summary
 06c3d9aef66849b9 target ar2
 366445d4e6857e31 import data.table::fread
+6f2b2a15149f0a74 import dataload__demand
 0186de414cebefe6 import dataload__has_continuing_shift
 1e25a3b6b2c526b6 import dataload__loadEventData
 c56dbef0a106b8c2 import dataload__loadProvProfile
 20989125cee7e257 import dataload__loadUNIT_WKLOAD
 9ca88a35df14db36 import dataload__log_message
 ef3d6c705d57b7ee import dataload__log_table
+69532ecfb6eebe94 target demand
 fde7da53200dea76 import dplyr::inner_join
 9a54259f24e28662 import dplyr::summarise
 5109b5c918f5ecb9 target drake_target_1
@@ -47,6 +50,8 @@ df5fc4dfaaf572bd import queuemodel__rate_summary
 8a4d111dec556536 import queuemodel__serviceTimeSummary
 5edebf02dadf37a9 import queuemodel__trends
 efc306f7dd2a135b target resp
+b7299c6d33b92763 import rmarkdown::render
+e7551ea141169524 target rmodU
 cabea52706de2567 import s
 36f327332e32ea32 import service.level
 a4d0b85f9bba9faf target servs
