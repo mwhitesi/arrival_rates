@@ -553,3 +553,23 @@ shifts$fill <- function(dt, start, end) {
   return(res)
 }
 
+shifts$convert_shift_matrix <- function(sm, origin, duration.in.min) {
+  #' Convert the `$shift.matrix` format to a data.table of concurrent unit counts
+  #' 
+  #' @param sm matrix with 1/0 in each column period that unit is active
+  #' @param origin POSIXct object indicating the datetime of the first column
+  #' @param duration.in.in Integer indicating the length in minutes for each period
+  
+  
+  
+  np = ncol(sm)
+  periods = as.POSIXct(seq(0,(np*duration.in.min*60), by=duration.in.min*60), origin=origin, tz="UTC")
+  periods = periods[1:(length(periods)-1)]
+  counts = apply(sm, 2, sum)
+  
+  stopifnot(length(periods) == length(counts))
+  
+  return(data.table(window=periods, counts=counts))
+  
+}
+

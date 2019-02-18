@@ -55,7 +55,9 @@ shiftopt__optimize <- function(required.servers, shift.setup, solver="glpk") {
   }
   
   #result = optm %>% solve_model(with_ROI(solver = solver))
-  result = optm %>% solve_model(with_ROI(solver = solver, verbosity=1))
+  
+  # Set a time limit
+  result = optm %>% solve_model(with_ROI(solver = solver, verbosity=1, time_limit=5*60))
   
   soln = data.table(get_solution(result, x[i]))
   soln = soln[value != 0]

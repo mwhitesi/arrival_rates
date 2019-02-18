@@ -27,9 +27,6 @@ start.ts = min(demand$window)
 end.ts = max(demand$window)
 setkey(demand, window)
 
-# Round regression targets
-modR = lapply(modR, function(rmodU) rmodU[,s:=ceiling(s)])
-
 # Merge data with demand values
 prep <- function(modU) {
   # Add datetime column

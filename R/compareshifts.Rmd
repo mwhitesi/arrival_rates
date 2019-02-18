@@ -16,6 +16,98 @@ knitr::opts_chunk$set(echo = FALSE, fig.width=12, fig.height=7)
 
 
 
+demand = drake::readd(demand)
+histU = drake::readd(histU)
+fundU = drake::readd(fundU)
+crews.bl = drake::readd(crewsRmBl)
+crews.fr = drake::readd(crewsRmFr)
+
+# Compute models with comparable hours
+duration.in.min = 15
+myorigin = "2018-12-9 00:00:00" # A random sunday used to anchor the datetime column
+
+blockshift.setup <- list(
+  shift.types = c('week_12hr', '4day_10.5hr', '2day_10.5hr'), # Allowable shift types
+  period.stagger = duration.in.min, # Time increment that shifts can start
+  period.days = 7, # Planning period length in days
+  daily.sc.window = c(5*60,20*60), # Window that a shift change can occur in minutes
+  max.sc = 4 # Max number of start/stops in any time block
+)
+freeshift.setup <- list(
+  shift.types = c('12hr', '10.5hr', '8.4hr'),
+  period.stagger = duration.in.min,
+  period.days = 7,
+  daily.sc.window = c(5*60,20*60),
+  max.sc = 4
+)
+
+mod1 = tsregression__fitFFTModel(demand, duration.in.min, 0.95735)
+crews1 = shiftopt__optimize(mod1, blockshift.setup, solver)
+mod2 = tsregression__fitFFTModel(demand, duration.in.min, 0.97311)
+crews2 = shiftopt__optimize(mod2, freeshift.setup, solver)
+
+# Convert
+optBU = shifts$convert_shift_matrix(crews.bl$shift.matrix, myorigin, duration.in.min)
+optFU = shifts$convert_shift_matrix(crews.fr$shift.matrix, myorigin, duration.in.min)
+loptBU = shifts$convert_shift_matrix(crews1$shift.matrix, myorigin, duration.in.min)
+loptFU = shifts$convert_shift_matrix(crews2$shift.matrix, myorigin, duration.in.min)
+
+start.ts = min(demand$window)
+end.ts = max(demand$window)
+setkey(demand, window)
+
+# Merge data with demand values
+prep <- function(modU, weekly) {
+  
+  setkey(modU, window)
+
+  # Stretch weekly values to year
+  if(weekly) {
+    modU = shifts$fill(modU, start.ts, end.ts)
+  }
+  
+  # Join to demand
+  modDT = shifts$shift_join(modU, demand)
+  
+  # Remove first/last day
+  modDT = shifts$trim(modDT)
+  
+  return(modDT)
+}
+
+histU = prep(histU, FALSE)
+fundU = prep(fundU, TRUE)
+optBU = prep(optBU, TRUE)
+optFU = prep(optFU, TRUE)
+loptBU = prep(loptBU, TRUE)
+loptFU = prep(loptFU, TRUE)
+
+# Compute annual performance
+histR = shifts$performance(histU)
+fundR = shifts$performance(fundU)
+optBR = shifts$performance(optBU)
+optFR = shifts$performance(optFU)
+loptBR = shifts$performance(loptBU)
+loptFR = shifts$performance(loptFU)
+rlist = list(histR, fundR, optBR, optFR, loptBR, loptFR)
+
+# Compute weekly averages/metrics
+histW = shifts$weekly_aggregate(histU, 60)
+fundW = shifts$weekly_aggregate(fundU, 60)
+optBW = shifts$weekly_aggregate(optBU, 60)
+optFW = shifts$weekly_aggregate(optFU, 60)
+loptBW = shifts$weekly_aggregate(loptBU, 60)
+loptFW = shifts$weekly_aggregate(loptFU, 60)
+wlist = list(histW, fundW, optBW, optFW, loptBW, loptFW)
+
+
+# yearly counts
+mlist = list(histU, fundU, optBU, optFU, loptBU, loptFU)
+
+# Update start/end after trim operation
+start.ts = min(histW$window)
+end.ts = max(histW$window)
+
 
 ```
 
@@ -29,9 +121,191 @@ This analysis compares the following datasets:
 1. Funded: EDMO Metro Shifts listed in the Jan 25, 2019 Provincial Profile.
 1. Optimized Block Shifts (Scenario 1): An optimized weekly shift schedule was created using the 4 existing shift types observed in the Profile for EDMO Metro: i) 7-day, 12 hr Day/Night offset pairs ii) 7-day, 12 hr iii) 4-day, 10.5 hr and iv) 2-day, 10.5 hr. These shift types were fit to estimated weekly demand based on a FFT regression model (prediction interval=0.991), to minimize the total number of scheduled hours. Note: in this Block shift model, shifts are required to start the same time each day for consecutive days, matching current practice in the Profile. 
 1. Optimized Free Shifts (Scenario 2): An optimized weekly shift schedule was created using the shift lengths 12, 10.5 and 8.4 hrs. Daily start times are independent of other days (no requirement for same start time across consecutive days). These shift types were fit to estimated weekly demand based on a FFT regression model (prediction interval=0.991), to minimize the total number of scheduled hours.
-
+1. Optimized Block Shifts - Decreased Service Level: Same model as in Optimized Block Shifts, the service level was reduced so that total scheduled hours was similar to hours observed for historical.
+1. Optimized Free Shifts - Decreased Service Level: Same model as in Optimized Free Shifts, the service level was reduced so that total scheduled hours was similar to hours observed for historical.
 
   
 # Performance
   
 ## General
+
+```{r perform1, warning=FALSE}
+
+f1 <- function(modList, model.names) {
+  thrs = sapply(modList, `[[`, 'StaffedTotalHrs')
+  uhrs = sapply(modList, `[[`, 'UnitAvailableTotalHrs')
+  upr = sapply(modList, `[[`, 'UnitAvailableProportion')
+  ratio = uhrs / thrs
+  
+  df1 = data.frame(a=model.names, c=thrs, d=uhrs, e=upr, f=ratio)
+  
+  return(df1)
+}
+
+nms <- c('Historical', 'Funded', 'Optimized Block Shifts', 'Optimized Free Shifts', 'Optimized Block Shifts - Decreased Service Level', 'Optimized Free Shifts - Decreased Service Level')
+df1 = f1(rlist, nms)
+
+colnms <- c('Dataset','Total Scheduled Hours', 'Hours Unit Available', 'Proportion Unit Available', 'Hours Unit Available / Total Scheduled Hours' )
+            
+knitr::kable(df1, caption=paste("Performance Metrics for", start.ts,' - ', end.ts), row.names = FALSE, col.names = colnms) %>%
+  kable_styling()
+
+```
+
+<style>
+  .superbigimage{
+    overflow-x:scroll;
+    white-space: nowrap;
+  }
+
+.superbigimage img{
+  max-width: none;
+}
+</style>
+
+<div class="superbigimage">
+```{r plot1, warning=FALSE}
+
+nap = data.table(1-sapply(wlist, `[[`, 'UnitAvailableProportion'))
+colnames(nap) = nms
+nap = cbind(window=wlist[[1]]$window, nap)
+
+p = performance__plot_weekly_multi_metric_bar(nap, nms, 
+                                              title='Average Time Unit is Unavailable',
+                                              ylabel = 'Proportion')
+p
+
+````
+</div>
+
+```{r plot1.1, warning=FALSE}
+
+
+
+```
+
+## Utilization
+
+```{r perform2, warning=FALSE}
+
+f2 <- function(modList, model.names, metric) {
+  ave = sapply(modList, function(x) sapply(x[metric], `[[`, 'mean'))
+  p50 = sapply(modList, function(x) sapply(x[metric], `[[`, 'p50'))
+  p90 = sapply(modList, function(x) sapply(x[metric], `[[`, 'p90'))
+  max = sapply(modList, function(x) sapply(x[metric], `[[`, 'max'))
+  min = sapply(modList, function(x) sapply(x[metric], `[[`, 'min'))
+  
+  df = data.frame(a=model.names, b=ave, c=p50, d=p90, e=max, f=min)
+  
+  return(df)
+}
+
+
+df2 = f2(rlist, nms, 'Utilization')
+
+colnms <- c("Dataset", "Mean", "Median", "90th Percentile", "Max", "Min")
+knitr::kable(df2, caption=paste("Utilization Metrics for", start.ts,' - ', end.ts), row.names = FALSE, col.names = colnms) %>%
+  kable_styling()
+
+
+```
+
+<div class="superbigimage">
+```{r plot2}
+
+ut = data.table(sapply(wlist, `[[`, 'ut.mean'))
+colnames(ut) = nms
+ut = cbind(window=wlist[[1]]$window, ut)
+
+p = performance__plot_weekly_multi_metric_line(ut, nms, title='Average Utilization',
+                                               ylabel = 'Proportion on Event')
+p
+```
+</div>
+  
+
+## Availability
+
+```{r perform3, warning=FALSE}
+
+df3 = f2(rlist, nms, 'Availability')
+
+
+knitr::kable(df3, caption=paste("Availability Metrics for", start.ts,' - ', end.ts), row.names = FALSE, col.names = colnms) %>%
+  kable_styling()
+
+```
+
+
+Some of the largest difference between estimated and actual units occurred on:
+  
+  1. 2018-01-01 2018, Differences ranged from -10 to -2 over 00:30-1:30. New years.
+  2. 2018-02-13, Differences ranged from -7 to -2 over 13:30-17:30. Freezing rain, lots of fall events (Card 17).
+  3. 2018-10-11 Differences ranged from -6 to -3 over 16:30:00-18:15:00. No discovered explanation.
+  
+  
+<div class="superbigimage">
+```{r plot3} 
+
+av = data.table(sapply(wlist, `[[`, 'av.mean'))
+colnames(av) = nms
+av = cbind(window=wlist[[1]]$window, av)
+
+p = performance__plot_weekly_multi_metric_line(av, nms, title='Average Availability',
+                                               ylabel = '# Units')
+p
+```
+</div>
+  
+
+<div class="superbigimage">
+```{r plot3.1, echo=FALSE}
+
+avDT = data.table(sapply(mlist, `[[`, 'av'))
+colnames(avDT) = nms
+avDT = cbind(window=mlist[[1]]$window, avDT)
+
+p = performance__plot_hour_histogram(avDT, nms, duration.in.min)
+
+p
+
+```
+</div>
+  
+
+<div class="superbigimage">
+```{r plot3.2, echo=FALSE}
+
+p = performance__plot_availability_cumulative_distribution(avDT, nms)
+
+p
+
+```
+</div>
+  
+
+
+```{r table3.3, echo=FALSE}
+
+dts = lapply(mlist, function(m) { DT=t(performance__table_availability_cumulative_distribution(m)); colnames(DT)=DT[1,]; data.table(DT[-1,]) })
+distnDT = rbindlist(dts, fill=TRUE)
+
+keepcol = as.numeric(colnames(distnDT)) >= 0
+distnDT = distnDT[,..keepcol]
+
+distnDT = cbind(Metric=rep(c('Weekday', 'Weekend', '% Units', '% >= Units'), 6), Dataset=rep(nms, each=4), distnDT)
+
+knitr::kable(distnDT, caption=paste("Unit Availability for", start.ts,' - ', end.ts), 
+             row.names=FALSE, col.names=colnames(distnDT)) %>%
+  kableExtra::kable_styling(bootstrap_options = "bordered") %>%
+  kableExtra::column_spec(1:2, width = "12em; min-width: 12em;") %>%
+  kableExtra::scroll_box(width = "800px", height = "100%")
+
+
+```
+
+
+
+
+
+  

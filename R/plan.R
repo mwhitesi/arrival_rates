@@ -8,6 +8,7 @@ source('R/packages.R')
 source('R/timeutils.R')
 source('R/dataload.R')
 source('R/queuemodel.R')
+source('R/modeltest.R')
 source('R/tsregression.R')
 source('R/performance.R')
 source('R/shifts.R')
@@ -21,9 +22,9 @@ duration.in.min = 15
 dir.create('data/interim/dataload/', showWarnings=FALSE)
 
 data_plan <- drake_plan(
-  resp = dataload__loadEventData(file_in("data/raw/EDMO_Metro_Response_Extract/Report 1.csv")),
-  histU = dataload__loadUNIT_WKLOAD(file_in("data/raw/EDMO_unit_workload.csv"), duration.in.min, do.plot=TRUE),
-  fundU = dataload__loadProvProfile(file_in("data/raw/Profile_2019-01-25.csv"), duration.in.min, do.plot=TRUE),
+  resp = dataload__loadEventData("data/raw/EDMO_Metro_Response_Extract/Report 1.csv"),
+  histU = dataload__loadUNIT_WKLOAD("data/raw/EDMO_unit_workload.csv", duration.in.min, do.plot=TRUE),
+  fundU = dataload__loadProvProfile("data/raw/Profile_2019-01-25.csv", duration.in.min, do.plot=TRUE),
   demand = dataload__demand(resp, duration.in.min)
 )
 
@@ -39,8 +40,8 @@ queuemodel_plan <- drake_plan(
   st = queuemodel__findOutliers(resp, "service time", start.date),
   ar2 = queuemodel__addTimeColumns(ar),
   st2 = queuemodel__addTimeColumns(st),
-  ar_summary = queuemodel__arrivalSummary(ar2, file_out("data/processed/EDMO_arrival_rates__2017-11-01_2018-11-01.csv")),
-  st_summary = queuemodel__serviceTimeSummary(st2, file_out("data/processed/EDMO_service_time__2017-11-01_2018-11-01.csv")),
+  ar_summary = queuemodel__arrivalSummary(ar2, "data/processed/EDMO_arrival_rates__2017-11-01_2018-11-01.csv"),
+  st_summary = queuemodel__serviceTimeSummary(st2, "data/processed/EDMO_service_time__2017-11-01_2018-11-01.csv"),
   st_ar_corr = queuemodel__correlationSummary(st_summary, ar_summary),
   st_pvals = queuemodel__trends(ar2, st2),
   qmodU = queuemodel__model(ar2, st2, duration.in.min, service.level, ar.lag, st.lag, load.threshold, do.plot=FALSE)
@@ -48,8 +49,7 @@ queuemodel_plan <- drake_plan(
 
 pred.int = .991 # Prediction interval to consider when predicting required number of units
 regressionmodel_plan <- drake_plan(
-  
-  rmodU = tsregression__fitFFTModel(demand, duration.in.min, pred.int)
+  rmodU = tsregression__fitFFTModel(demand, duration.in.min, pred.int),
 )
 
 # Compare required shift estimates - TS regression vs Queue model
@@ -57,7 +57,7 @@ dir.create('data/interim/comparemodels/', showWarnings=FALSE)
 comparemodels_plan <- drake_plan(
   modelreport = rmarkdown::render(
     knitr_in("R/comparemodels.Rmd"),
-    output_file = file_out("data/interim/comparemodels/unit_requirement_modelling.html"),
+    output_file = "data/interim/comparemodels/unit_requirement_modelling_v1.html",
     quiet = TRUE
   )
 )
@@ -83,27 +83,27 @@ shifts_plan <- drake_plan(
   crewsQmBl = shiftopt__optimize(qmodU, blockshift.setup, solver),
   crewsQmFr = shiftopt__optimize(qmodU, freeshift.setup, solver),
   crewsRmBl = shiftopt__optimize(rmodU, blockshift.setup, solver),
-  crewsRmFr = shiftopt__optimize(rmodU, freeshift.setup, solver)
+  crewsRmFr = shiftopt__optimize(rmodU, freeshift.setup, solver),
 )
 
 
 # Compare optimized shifts vs existing shift patterns
 dir.create('data/interim/compareshifts/', showWarnings=FALSE)
-comparemodels_plan <- drake_plan(
-  modelreport = rmarkdown::render(
-    knitr_in("R/comparemodels.Rmd"),
-    output_file = file_out("data/interim/comparemodels/unit_requirement_modelling.html"),
-    quiet = TRUE
-  )
-)
+# comparemodels_plan <- drake_plan(
+#   modelreport = rmarkdown::render(
+#     knitr_in("R/comparemodels.Rmd"),
+#     output_file = file_out("data/interim/compare/unit_requirement_modelling.html"),
+#     quiet = TRUE
+#   )
+# )
 
 whole_plan <- bind_plans(data_plan, queuemodel_plan, regressionmodel_plan, comparemodels_plan, shifts_plan)
 
-drake_cache_log_file(file = "drake_cache_log.txt")
+#drake_cache_log_file(file = "drake_cache_log.txt")
 
 
 script.dir <- getwd()
-ff <- file.path(script.dir, "data/interim/compareshifts/shift_comparison.html")
+ff <- file.path(script.dir, "data/interim/compareshifts/shift_comparison_v1.html")
 rmarkdown::render(
   "R/compareshifts.Rmd",
   output_file = ff
