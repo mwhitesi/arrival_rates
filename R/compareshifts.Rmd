@@ -14,37 +14,19 @@ knitr::opts_chunk$set(echo = FALSE, fig.width=12, fig.height=7)
 
 ```{r init, include=FALSE}
 
-
-
+# Datasets
 demand = drake::readd(demand)
 histU = drake::readd(histU)
 fundU = drake::readd(fundU)
 crews.bl = drake::readd(crewsRmBl)
 crews.fr = drake::readd(crewsRmFr)
+crews1 = drake::readd(crewsExBl)
+crews2 = drake::readd(crewsExFr)
 
-# Compute models with comparable hours
+# Params
 duration.in.min = 15
 myorigin = "2018-12-9 00:00:00" # A random sunday used to anchor the datetime column
 
-blockshift.setup <- list(
-  shift.types = c('week_12hr', '4day_10.5hr', '2day_10.5hr'), # Allowable shift types
-  period.stagger = duration.in.min, # Time increment that shifts can start
-  period.days = 7, # Planning period length in days
-  daily.sc.window = c(5*60,20*60), # Window that a shift change can occur in minutes
-  max.sc = 4 # Max number of start/stops in any time block
-)
-freeshift.setup <- list(
-  shift.types = c('12hr', '10.5hr', '8.4hr'),
-  period.stagger = duration.in.min,
-  period.days = 7,
-  daily.sc.window = c(5*60,20*60),
-  max.sc = 4
-)
-
-mod1 = tsregression__fitFFTModel(demand, duration.in.min, 0.95735)
-crews1 = shiftopt__optimize(mod1, blockshift.setup, solver)
-mod2 = tsregression__fitFFTModel(demand, duration.in.min, 0.97311)
-crews2 = shiftopt__optimize(mod2, freeshift.setup, solver)
 
 # Convert
 optBU = shifts$convert_shift_matrix(crews.bl$shift.matrix, myorigin, duration.in.min)
@@ -71,6 +53,9 @@ prep <- function(modU, weekly) {
   
   # Remove first/last day
   modDT = shifts$trim(modDT)
+  
+  # Add some utility columns
+  modDT = shifts$weekly_bin(modDT, duration.in.min)
   
   return(modDT)
 }
@@ -163,14 +148,22 @@ knitr::kable(df1, caption=paste("Performance Metrics for", start.ts,' - ', end.t
 }
 </style>
 
+### Unit Availability Plots {.tabset}
+
+#### Historical vs Optimized
+
+Optimized Block Shifts using high service level to meet expected demand
+
 <div class="superbigimage">
-```{r plot1, warning=FALSE}
+```{r plot1.01, warning=FALSE}
 
-nap = data.table(1-sapply(wlist, `[[`, 'UnitAvailableProportion'))
-colnames(nap) = nms
-nap = cbind(window=wlist[[1]]$window, nap)
+tmplist = list(histW, optBW)
+nap = data.table(1-sapply(tmplist, `[[`, 'UnitAvailableProportion'))
+thisnms = nms[c(1,3)]
+colnames(nap) = thisnms
+nap = cbind(window=tmplist[[1]]$window, nap)
 
-p = performance__plot_weekly_multi_metric_bar(nap, nms, 
+p = performance__plot_weekly_multi_metric_bar(nap, thisnms, 
                                               title='Average Time Unit is Unavailable',
                                               ylabel = 'Proportion')
 p
@@ -178,11 +171,182 @@ p
 ````
 </div>
 
+#### Historical vs Optimized 2
+
+Optimized Block Shifts with reduced service level to match Historical staffed hours.
+
+<div class="superbigimage">
+```{r plot1.02, warning=FALSE}
+
+tmplist = list(histW, loptBW)
+nap = data.table(1-sapply(tmplist, `[[`, 'UnitAvailableProportion'))
+thisnms = nms[c(1,5)]
+colnames(nap) = thisnms
+nap = cbind(window=tmplist[[1]]$window, nap)
+
+p = performance__plot_weekly_multi_metric_bar(nap, thisnms, 
+                                              title='Average Time Unit is Unavailable',
+                                              ylabel = 'Proportion')
+p
+
+```
+</div>
+
+#### Historical vs Funded
+
+Actual EDMO Metro Units deployed vs Units listed in Profile.
+
+<div class="superbigimage">
+```{r plot1.03, warning=FALSE}
+
+tmplist = list(histW, fundW)
+nap = data.table(1-sapply(tmplist, `[[`, 'UnitAvailableProportion'))
+thisnms = nms[c(1,2)]
+colnames(nap) = thisnms
+nap = cbind(window=tmplist[[1]]$window, nap)
+
+p = performance__plot_weekly_multi_metric_bar(nap, thisnms, 
+                                              title='Average Time Unit is Unavailable',
+                                              ylabel = 'Proportion')
+p
+
+```
+</div>
+
+#### Optimized Block Shifts vs Free Shifts
+
+Free shifts are not constrainted by requiring the same consecutive multi-day start times.
+
+<div class="superbigimage">
+```{r plot1.04, warning=FALSE}
+
+tmplist = list(optBW, optFW)
+nap = data.table(1-sapply(tmplist, `[[`, 'UnitAvailableProportion'))
+thisnms = nms[c(3,4)]
+colnames(nap) = thisnms
+nap = cbind(window=tmplist[[1]]$window, nap)
+
+p = performance__plot_weekly_multi_metric_bar(nap, thisnms, 
+                                              title='Average Time Unit is Unavailable',
+                                              ylabel = 'Proportion')
+p
+
+```
+</div>
+
+
+
+### Unit Distribution Plots {.tabset}
+
+#### Historical vs Optimized 
+
+Optimized Block Shifts using high service level to meet expected demand
+
+<div class="superbigimage">
 ```{r plot1.1, warning=FALSE}
 
 
+weekly_count <- function(sDT) {
+  cDT = sDT[,.(window=max(window), mean=mean(staffed)), .(weekly.bin, daily.bin)]
+  cDT[,.(window, mean)]
+}
+
+histC = weekly_count(histU)
+optBC = weekly_count(optBU)
+
+counts = merge(histC, optBC, by='window', suffixes = c('.hist', '.opt'))
+counts = shifts$weekly_bin(counts, duration.in.min)
+setkeyv(counts, c("weekly.bin", "daily.bin"))
+
+dt = seq(counts$window[1], counts$window[1]+lubridate::days(7), by=paste(duration.in.min, "mins"))
+dt = dt[1:(length(dt)-1)]
+counts[,window:=dt]
+thisnms = nms[c(1,3)]
+setnames(counts, c('mean.hist','mean.opt'), thisnms)
+
+p = performance__plot_weekly_multi_metric_line(counts, thisnms,
+                                               title='Average Staffed Units',
+                                               ylabel = '# Units')
+p
 
 ```
+</div>
+
+#### Historical vs Optimized 2
+
+Optimized Block Shifts with reduced service level to match Historical staffed hours.
+
+<div class="superbigimage">
+```{r plot1.2, warning=FALSE}
+
+loptBC = weekly_count(loptBU)
+
+counts = merge(histC, loptBC, by='window', suffixes = c('.hist', '.opt'))
+counts = shifts$weekly_bin(counts, duration.in.min)
+setkeyv(counts, c("weekly.bin", "daily.bin"))
+counts[,window:=dt]
+thisnms = nms[c(1,5)]
+setnames(counts, c('mean.hist','mean.opt'), thisnms)
+
+
+p = performance__plot_weekly_multi_metric_line(counts, thisnms,
+                                              title='Average Staffed Units',
+                                              ylabel = '# Units')
+p
+
+```
+</div>
+
+#### Historical vs Funded
+
+Actual EDMO Metro Units deployed vs Units listed in Profile.
+
+<div class="superbigimage">
+```{r plot1.3, warning=FALSE}
+
+fundC = weekly_count(fundU)
+
+counts = merge(histC, fundC, by='window', suffixes = c('.hist', '.opt'))
+counts = shifts$weekly_bin(counts, duration.in.min)
+setkeyv(counts, c("weekly.bin", "daily.bin"))
+counts[,window:=dt]
+thisnms = nms[c(1,2)]
+setnames(counts, c('mean.hist','mean.opt'), thisnms)
+
+
+p = performance__plot_weekly_multi_metric_line(counts, thisnms,
+                                              title='Average Staffed Units',
+                                              ylabel = '# Units')
+p
+
+```
+</div>
+
+
+#### Optimized Block Shifts vs Free Shifts
+
+Free shifts are not constrainted by requiring the same consecutive multi-day start times.
+
+<div class="superbigimage">
+```{r plot1.4, warning=FALSE}
+
+optFC = weekly_count(optFU)
+
+counts = merge(optBC, optFC, by='window', suffixes = c('.hist', '.opt'))
+counts = shifts$weekly_bin(counts, duration.in.min)
+setkeyv(counts, c("weekly.bin", "daily.bin"))
+counts[,window:=dt]
+thisnms = nms[c(3,4)]
+setnames(counts, c('mean.hist','mean.opt'), thisnms)
+
+
+p = performance__plot_weekly_multi_metric_line(counts, thisnms,
+                                              title='Average Staffed Units',
+                                              ylabel = '# Units')
+p
+
+```
+</div>
 
 ## Utilization
 
@@ -210,19 +374,92 @@ knitr::kable(df2, caption=paste("Utilization Metrics for", start.ts,' - ', end.t
 
 ```
 
+
+### Utilization Plots {.tabset}
+
+#### Historical vs Optimized
+
+Optimized Block Shifts using high service level to meet expected demand
+
 <div class="superbigimage">
-```{r plot2}
+```{r plot2.01, warning=FALSE}
 
-ut = data.table(sapply(wlist, `[[`, 'ut.mean'))
-colnames(ut) = nms
-ut = cbind(window=wlist[[1]]$window, ut)
+tmplist = list(histW, optBW)
+nap = data.table(sapply(tmplist, `[[`, 'ut.mean'))
+thisnms = nms[c(1,3)]
+colnames(nap) = thisnms
+nap = cbind(window=tmplist[[1]]$window, nap)
 
-p = performance__plot_weekly_multi_metric_line(ut, nms, title='Average Utilization',
-                                               ylabel = 'Proportion on Event')
+p = performance__plot_weekly_multi_metric_bar(nap, thisnms, 
+                                              title='Average Utilization',
+                                              ylabel = 'Proportion on Event')
 p
+
+````
+</div>
+
+#### Historical vs Optimized 2
+
+Optimized Block Shifts with reduced service level to match Historical staffed hours.
+
+<div class="superbigimage">
+```{r plot2.02, warning=FALSE}
+
+tmplist = list(histW, loptBW)
+nap = data.table(sapply(tmplist, `[[`, 'ut.mean'))
+thisnms = nms[c(1,5)]
+colnames(nap) = thisnms
+nap = cbind(window=tmplist[[1]]$window, nap)
+
+p = performance__plot_weekly_multi_metric_bar(nap, thisnms, 
+                                              title='Average Utilization',
+                                              ylabel = 'Proportion on Event')
+p
+
 ```
 </div>
-  
+
+#### Historical vs Funded
+
+Actual EDMO Metro Units deployed vs Units listed in Profile.
+
+<div class="superbigimage">
+```{r plot2.03, warning=FALSE}
+
+tmplist = list(histW, fundW)
+nap = data.table(sapply(tmplist, `[[`, 'ut.mean'))
+thisnms = nms[c(1,2)]
+colnames(nap) = thisnms
+nap = cbind(window=tmplist[[1]]$window, nap)
+
+p = performance__plot_weekly_multi_metric_bar(nap, thisnms, 
+                                              title='Average Utilization',
+                                              ylabel = 'Proportion on Event')
+p
+
+```
+</div>
+
+#### Optimized Block Shifts vs Free Shifts
+
+Free shifts are not constrainted by requiring the same consecutive multi-day start times.
+
+<div class="superbigimage">
+```{r plot2.04, warning=FALSE}
+
+tmplist = list(optBW, optFW)
+nap = data.table(sapply(tmplist, `[[`, 'ut.mean'))
+thisnms = nms[c(3,4)]
+colnames(nap) = thisnms
+nap = cbind(window=tmplist[[1]]$window, nap)
+
+p = performance__plot_weekly_multi_metric_bar(nap, thisnms, 
+                                              title='Average Utilization',
+                                              ylabel = 'Proportion on Event')
+p
+
+```
+</div>
 
 ## Availability
 
@@ -243,47 +480,221 @@ Some of the largest difference between estimated and actual units occurred on:
   2. 2018-02-13, Differences ranged from -7 to -2 over 13:30-17:30. Freezing rain, lots of fall events (Card 17).
   3. 2018-10-11 Differences ranged from -6 to -3 over 16:30:00-18:15:00. No discovered explanation.
   
-  
+
+### Availability Plots {.tabset}
+
+#### Historical vs Optimized
+
+Optimized Block Shifts using high service level to meet expected demand
+
 <div class="superbigimage">
-```{r plot3} 
+```{r plot3.01, warning=FALSE}
 
-av = data.table(sapply(wlist, `[[`, 'av.mean'))
-colnames(av) = nms
-av = cbind(window=wlist[[1]]$window, av)
+tmplist = list(histW, optBW)
+nap = data.table(sapply(tmplist, `[[`, 'av.mean'))
+thisnms = nms[c(1,3)]
+colnames(nap) = thisnms
+nap = cbind(window=tmplist[[1]]$window, nap)
 
-p = performance__plot_weekly_multi_metric_line(av, nms, title='Average Availability',
-                                               ylabel = '# Units')
+p = performance__plot_weekly_multi_metric_line(nap, thisnms, 
+                                              title='Average Availability',
+                                              ylabel = '# Units')
 p
+
+````
+</div>
+
+#### Historical vs Optimized 2
+
+Optimized Block Shifts with reduced service level to match Historical staffed hours.
+
+<div class="superbigimage">
+```{r plot3.02, warning=FALSE}
+
+tmplist = list(histW, loptBW)
+nap = data.table(sapply(tmplist, `[[`, 'av.mean'))
+thisnms = nms[c(1,5)]
+colnames(nap) = thisnms
+nap = cbind(window=tmplist[[1]]$window, nap)
+
+p = performance__plot_weekly_multi_metric_line(nap, thisnms, 
+                                              title='Average Availability',
+                                              ylabel = '# Units')
+p
+
+```
+</div>
+
+#### Historical vs Funded
+
+Actual EDMO Metro Units deployed vs Units listed in Profile.
+
+<div class="superbigimage">
+```{r plot3.03, warning=FALSE}
+
+tmplist = list(histW, fundW)
+nap = data.table(sapply(tmplist, `[[`, 'av.mean'))
+thisnms = nms[c(1,2)]
+colnames(nap) = thisnms
+nap = cbind(window=tmplist[[1]]$window, nap)
+
+p = performance__plot_weekly_multi_metric_line(nap, thisnms, 
+                                              title='Average Availability',
+                                              ylabel = '# Units')
+p
+
+```
+</div>
+
+#### Optimized Block Shifts vs Free Shifts
+
+Free shifts are not constrainted by requiring the same consecutive multi-day start times.
+
+<div class="superbigimage">
+```{r plot3.04, warning=FALSE}
+
+tmplist = list(optBW, optFW)
+nap = data.table(sapply(tmplist, `[[`, 'av.mean'))
+thisnms = nms[c(3,4)]
+colnames(nap) = thisnms
+nap = cbind(window=tmplist[[1]]$window, nap)
+
+p = performance__plot_weekly_multi_metric_line(nap, thisnms, 
+                                              title='Average Availability',
+                                              ylabel = '# Units')
+p
+
+```
+</div>
+
+
+### Availability Distribution Plots {.tabset}
+
+#### Historical vs Optimized
+
+Optimized Block Shifts using high service level to meet expected demand
+
+<div class="superbigimage">
+```{r plot3.11, warning=FALSE}
+
+i = c(1,3)
+tmplist = mlist[i]
+avDT = data.table(sapply(tmplist, `[[`, 'av'))
+thisnms = nms[i]
+colnames(avDT) = thisnms
+avDT = cbind(window=tmplist[[1]]$window, avDT)
+
+p = performance__plot_hour_histogram(avDT, thisnms, duration.in.min)
+
+p
+
+````
+</div>
+
+<div class="superbigimage">
+```{r plot3.21, echo=FALSE}
+
+p = performance__plot_availability_cumulative_distribution(avDT, thisnms)
+
+p
+
+```
+</div>
+
+#### Historical vs Optimized 2
+
+Optimized Block Shifts with reduced service level to match Historical staffed hours.
+
+<div class="superbigimage">
+```{r plot3.12, warning=FALSE}
+
+i = c(1,5)
+tmplist = mlist[i]
+avDT = data.table(sapply(tmplist, `[[`, 'av'))
+thisnms = nms[i]
+colnames(avDT) = thisnms
+avDT = cbind(window=tmplist[[1]]$window, avDT)
+
+p = performance__plot_hour_histogram(avDT, thisnms, duration.in.min)
+
+p
+
+```
+</div>
+
+<div class="superbigimage">
+```{r plot3.22, echo=FALSE}
+
+p = performance__plot_availability_cumulative_distribution(avDT, thisnms)
+
+p
+
+```
+</div>
+
+#### Historical vs Funded
+
+Actual EDMO Metro Units deployed vs Units listed in Profile.
+
+<div class="superbigimage">
+```{r plot3.13, warning=FALSE}
+
+i = c(1,2)
+tmplist = mlist[i]
+avDT = data.table(sapply(tmplist, `[[`, 'av'))
+thisnms = nms[i]
+colnames(avDT) = thisnms
+avDT = cbind(window=tmplist[[1]]$window, avDT)
+
+p = performance__plot_hour_histogram(avDT, thisnms, duration.in.min)
+
+p
+
+```
+</div>
+
+<div class="superbigimage">
+```{r plot3.23, echo=FALSE}
+
+p = performance__plot_availability_cumulative_distribution(avDT, thisnms)
+
+p
+
+```
+</div>
+
+#### Optimized Block Shifts vs Free Shifts
+
+Free shifts are not constrainted by requiring the same consecutive multi-day start times.
+
+<div class="superbigimage">
+```{r plot3.14, warning=FALSE}
+
+i = c(3,4)
+tmplist = mlist[i]
+avDT = data.table(sapply(tmplist, `[[`, 'av'))
+thisnms = nms[i]
+colnames(avDT) = thisnms
+avDT = cbind(window=tmplist[[1]]$window, avDT)
+
+p = performance__plot_hour_histogram(avDT, thisnms, duration.in.min)
+
+p
+
+```
+</div>
+
+<div class="superbigimage">
+```{r plot3.24, echo=FALSE}
+
+p = performance__plot_availability_cumulative_distribution(avDT, thisnms)
+
+p
+
 ```
 </div>
   
-
-<div class="superbigimage">
-```{r plot3.1, echo=FALSE}
-
-avDT = data.table(sapply(mlist, `[[`, 'av'))
-colnames(avDT) = nms
-avDT = cbind(window=mlist[[1]]$window, avDT)
-
-p = performance__plot_hour_histogram(avDT, nms, duration.in.min)
-
-p
-
-```
-</div>
-  
-
-<div class="superbigimage">
-```{r plot3.2, echo=FALSE}
-
-p = performance__plot_availability_cumulative_distribution(avDT, nms)
-
-p
-
-```
-</div>
-  
-
+### Availability Distribution Table
 
 ```{r table3.3, echo=FALSE}
 
@@ -298,7 +709,7 @@ distnDT = cbind(Metric=rep(c('Weekday', 'Weekend', '% Units', '% >= Units'), 6),
 knitr::kable(distnDT, caption=paste("Unit Availability for", start.ts,' - ', end.ts), 
              row.names=FALSE, col.names=colnames(distnDT)) %>%
   kableExtra::kable_styling(bootstrap_options = "bordered") %>%
-  kableExtra::column_spec(1:2, width = "12em; min-width: 12em;") %>%
+  kableExtra::column_spec(1:2, width = "15em; min-width: 15em;") %>%
   kableExtra::scroll_box(width = "800px", height = "100%")
 
 

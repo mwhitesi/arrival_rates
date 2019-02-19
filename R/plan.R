@@ -50,6 +50,8 @@ queuemodel_plan <- drake_plan(
 pred.int = .991 # Prediction interval to consider when predicting required number of units
 regressionmodel_plan <- drake_plan(
   rmodU = tsregression__fitFFTModel(demand, duration.in.min, pred.int),
+  experiment.mod1 = tsregression__fitFFTModel(demand, duration.in.min, 0.95735),
+  experiment.mod2 = tsregression__fitFFTModel(demand, duration.in.min, 0.97311)
 )
 
 # Compare required shift estimates - TS regression vs Queue model
@@ -84,7 +86,11 @@ shifts_plan <- drake_plan(
   crewsQmFr = shiftopt__optimize(qmodU, freeshift.setup, solver),
   crewsRmBl = shiftopt__optimize(rmodU, blockshift.setup, solver),
   crewsRmFr = shiftopt__optimize(rmodU, freeshift.setup, solver),
+  crewsExBl = shiftopt__optimize(experiment.mod1, blockshift.setup, solver),
+  crewsExFr = shiftopt__optimize(experiment.mod2, freeshift.setup, solver)
 )
+
+
 
 
 # Compare optimized shifts vs existing shift patterns

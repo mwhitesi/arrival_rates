@@ -489,7 +489,14 @@ shifts$weekly_aggregate <- function(dt, duration.in.min) {
   
   dtnew[, UnitAvailableProportion := sum(av>0)/.N, by=.(weekly.bin, daily.bin)]
   
-  weekly = unique(dtnew, by=c("weekly.bin", "daily.bin"))
+  # Pick a Sunday start point
+  st = min(dtnew$window[ lubridate::wday(dtnew$window) == 1 &
+                         lubridate::hour(dtnew$window) == 0 &
+                         lubridate::minute(dtnew$window) == 0])
+  en = st + lubridate::days(7)
+  
+  weekly = dtnew[window >= st & window < en]
+  setkeyv(weekly, c("weekly.bin", "daily.bin"))
   
   return(weekly)
 }
