@@ -125,6 +125,32 @@ p = dboot_hist(orig[['UnitAvailableProportion']], sapply(res, `[[`, 'UnitAvailab
 ggsave('data/interim/unit_availability_proportion_bootstrap_histogram.pdf', p, width=8, height=8)
 
 # Plot samples
+sliding.window = function(x) rollapply(x, width = 48, by = 48, FUN = mean, na.rm = TRUE, align = "left")
+samples.rolling = cbind(demand[,sliding.window(count)], 
+      sapply(samples %>% slice(sample.int(nrow(samples), 10, replace = FALSE)) 
+       %>% pull(sample), function(dt) dt[, sliding.window(count)]))
+
+samples.rolling = data.table(window=seq(demand$window[1], length.out = nrow(samples.rolling), by=paste(duration.in.min, 'min')), samples.rolling)
+
+
+sample.rollmeans = cbind(demand[,.(window, rolling=rollmean(count, k=47, fill=NA))], 
+                         data.frame(sapply(samples %>% pull(sample), rollmean, k=47, fill=NA)))
+
+sample.rollmeans %>%  gather(key, value, -window, -rolling) %>%
 
 demand %>% ggplot(aes(x=window, y=count)) +
   geom_line()
+
+
+
+x.min = min(window.counts[,window])
+p = window.counts %>% gather(metric,value,c(count,daily.median,weekly.median)) %>%
+
+# Check optimum number of regression terms for bootstrap samples, does it change?
+
+samples
+
+tsregression__FFTModelAICc(demand, duration.in.min, pred.intv)
+
+# Check fit of original model on bootstrapped samples
+
