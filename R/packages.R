@@ -25,6 +25,7 @@ library(ROI.plugin.symphony)
 library(tibbletime)
 library(tidyr)
 library(tidyverse)
+library(viridis)
 library(zoo)
 
 

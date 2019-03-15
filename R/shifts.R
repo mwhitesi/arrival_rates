@@ -238,11 +238,13 @@ shifts$plot_weekly_shift_gantt <- function(shift.summary, shift.matrix, period.s
   
   
   # Convert to long format
-  shifts.long = list()
+  shifts.list = list()
   i = 1
   for (r in 1:nrow(shift.summary)) {
     
-    se = shifts$extract_start_ends(shift.matrix[r,])
+    res = shifts$extract_start_ends(shift.matrix[r,])
+    se = res$se
+    first = res$f
     
     new.shifts = lapply(seq_along(se), function(j) {
       x <- se[[j]]
@@ -250,18 +252,34 @@ shifts$plot_weekly_shift_gantt <- function(shift.summary, shift.matrix, period.s
       x['shift'] = i
       x['length'] = x$end - x$start
       x['p'] = j
+      x['first'] = first
       return(x)
     })
     i <- i + 1
     
-    shifts.long = append(shifts.long, new.shifts)
+    shifts.list = append(shifts.list, new.shifts)
     
   }
   
-  shifts.long = bind_rows(shifts.long)
+  label_maker <- function(shift, first, type) {
+    l = NULL
+    if(type == 'week_247') {
+      l = as.character(shift)
+    } else if(type == 'week_12hr') {
+      l = paste0(shift, ' - ', strftime(first, format="%H:%M", tz="UTC"))
+    } else {
+      l = paste0(shift, ' - ', strftime(first, format="%a %H:%M", tz="UTC"))
+    }
+    l
+  }
+  
+  shifts.long = bind_rows(shifts.list)
   shift.order = shifts.long %>% group_by(shift) %>% summarise(l=sum(length), s=min(start)) %>% arrange(desc(l), s, shift) %>% pull(shift)
-  
-  
+  xlabs = shifts.long %>% group_by(shift, type) %>% 
+    summarise(f=as.POSIXct(min(first)*period.stagger*60, origin=myorigin, tz="UTC")) %>% rowwise() %>%
+    mutate(f2=label_maker(shift, f, type)) %>% pull(f2)
+  xlabs = xlabs[shift.order]
+
   nperiods = max(shifts.long$end)
   x.breaks = seq(0.5,nperiods,by=1)
   
@@ -272,12 +290,19 @@ shifts$plot_weekly_shift_gantt <- function(shift.summary, shift.matrix, period.s
     mutate(start=as.POSIXct(start*period.stagger*60, origin=myorigin, tz="UTC"),
            end=as.POSIXct(end*period.stagger*60, origin=myorigin, tz="UTC"))
   
-  p = sl %>% gather(date.type,date.time,start:end) %>% arrange(date.time) %>%
+  sl %<>% gather(date.type,date.time,start:end) %>% arrange(date.time)
+  
+  
+  p = sl %>%
   ggplot(aes(x=shift,y=date.time,group=shift.group)) +
-    geom_line(size=2, alpha=.4) +
+    geom_line(aes(color=type), size=2, alpha=.4) +
     geom_vline(xintercept=x.breaks, colour="grey80", linetype="dotted") + 
     labs(y=NULL, x=NULL) + coord_flip(ylim=lims, expand=FALSE, clip="on") +
+    #labs(y=NULL, x=NULL) + coord_flip(ylim=lims, expand=FALSE, clip="on") +
+    scale_x_discrete(labels=xlabs) + 
     scale_y_datetime(date_labels = "%A %H:%M", date_breaks='6 hour', limits=lims) +
+    #scale_color_brewer(palette="Dark2") +
+    scale_color_viridis(discrete=TRUE) +
     shifts$ggplot2_theme() + theme(axis.text.x=element_text(angle=45, hjust=1), axis.text.y=element_text(margin=margin(0,20,0,20))) +
     ggtitle('Weekly Shift Gantt Chart')
     
@@ -321,7 +346,19 @@ shifts$extract_start_ends <- function(arow) {
     s = s + runs$lengths[r]
   }
   
-  start.ends
+  if(any(runs$values == 0)) {
+    first = which.max(runs$lengths[runs$values == 0])
+    if(start.ends[[1]]$start == 1) {
+      first = first + 1
+    }
+    if(first > length(start.ends)) {
+      first = 1
+    } 
+  } else {
+    first = 1
+  }
+  
+  return(list(se=start.ends, f=as.numeric(start.ends[[first]]$start)))
 }
 
 shifts$plot_shifts_vs_demand <- function(shift.summary, shift.matrix, period.stagger, demand.table, myorigin = "2018-12-9 00:00:00") {
