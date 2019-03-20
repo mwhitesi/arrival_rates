@@ -306,6 +306,32 @@ shifts$plot_weekly_shift_gantt <- function(shift.summary, shift.matrix, period.s
     shifts$ggplot2_theme() + theme(axis.text.x=element_text(angle=45, hjust=1), axis.text.y=element_text(margin=margin(0,20,0,20))) +
     ggtitle('Weekly Shift Gantt Chart')
     
+  # Count starting units
+  counts = tibble(period=1:nperiods)
+  counts = shifts.long %>% count(start) %>% rename(period=start, start=n) %>% right_join(counts, by="period")
+  counts = shifts.long %>% count(end) %>% rename(period=end, end=n) %>% right_join(counts, by="period")
+  counts = counts %>% replace_na(list(start=0, end=0))
+  
+  # For the plot, shifts that span the beyond the end week will have an artifical start/end on the first 
+  # and last period so that the block gets split properly
+  # I assumes that no shift actually starts or ends at the first or last period in the week - a simiplifying assumption so i do
+  # not need to identify which shifts wrap, currently safe since origin is midnight and shift window is 5-22hrs.
+  counts = counts %>% mutate(start = case_when(period == 1 | period == max(period) ~ 0, TRUE ~ start)) %>% 
+    mutate(end = case_when(period == 1 | period == max(period) ~ 0, TRUE ~ end))
+  counts = counts %>% mutate(dt=strftime(as.POSIXct(period*period.stagger*60, origin=myorigin, tz="UTC"), format = "%a %H:%M"))
+
+  
+  
+  num.units = max(apply(crews.bl$shift.matrix, 2, sum))
+  
+  text <- paste0("Number of units required to implement shift: ", num.units, sep = " ")
+  text.p <- ggparagraph(text = text, size = 11, color = "black")
+  
+  # Arrange the plots on the same page
+  ggarrange(p, text.p, 
+            ncol = 1, nrow = 2,
+            heights = c(1, .1))
+  
   
   return(p)
 }
