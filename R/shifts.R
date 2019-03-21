@@ -318,22 +318,10 @@ shifts$plot_weekly_shift_gantt <- function(shift.summary, shift.matrix, period.s
   # not need to identify which shifts wrap, currently safe since origin is midnight and shift window is 5-22hrs.
   counts = counts %>% mutate(start = case_when(period == 1 | period == max(period) ~ 0, TRUE ~ start)) %>% 
     mutate(end = case_when(period == 1 | period == max(period) ~ 0, TRUE ~ end))
-  counts = counts %>% mutate(dt=strftime(as.POSIXct(period*period.stagger*60, origin=myorigin, tz="UTC"), format = "%a %H:%M"))
+  counts = counts %>% mutate(dt=strftime(as.POSIXct(period*period.stagger*60, origin=myorigin, tz="UTC"), format = "%a %H:%M", tz="UTC"))
 
   
-  
-  num.units = max(apply(crews.bl$shift.matrix, 2, sum))
-  
-  text <- paste0("Number of units required to implement shift: ", num.units, sep = " ")
-  text.p <- ggparagraph(text = text, size = 11, color = "black")
-  
-  # Arrange the plots on the same page
-  ggarrange(p, text.p, 
-            ncol = 1, nrow = 2,
-            heights = c(1, .1))
-  
-  
-  return(p)
+  return(list(plot=p, startstops=counts))
 }
 
 shifts$ggplot2_theme <- function(base_size=11) {

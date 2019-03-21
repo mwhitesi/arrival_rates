@@ -1,6 +1,6 @@
 figure/
 report.md
-rmspe.pdf
+*.pdf
 .Rproj.user
 .RData
 .Rhistory

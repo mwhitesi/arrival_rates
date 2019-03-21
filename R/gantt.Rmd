@@ -1,0 +1,75 @@
+---
+title: "EDMO Metro Optimum Shift Schedule"
+date: "March 3, 2019"
+output: pdf_document
+geometry: margin=2cm
+classoption: legalpaper
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, fig.width=12, fig.height=7)
+```
+
+```{r init, include=FALSE}
+
+source('packages.R')
+source('shifts.R')
+
+# Dataset
+crews.bl = drake::readd(crewsRmBl)
+
+# Params
+duration.in.min = 15
+myorigin = "2018-12-9 00:00:00" # A random sunday used to anchor the datetime column
+
+```
+
+## Gantt
+
+```{r gantt, fig.width=8, fig.height=14}
+
+res = shifts$plot_weekly_shift_gantt(crews.bl$shifts, crews.bl$shift.matrix, duration.in.min, myorigin)
+
+reqd.units = max(apply(crews.bl$shift.matrix, 2, sum))
+
+
+res[['plot']]
+
+```
+
+\newpage
+
+## Required Units
+
+Units required to implement schedule: `r reqd.units`.
+
+\newpage
+
+```{r startstop}
+
+tbl = res[['startstops']]
+
+tbl = tbl %>% separate(dt, c("Day", "Hour"), sep = " ", remove=TRUE)
+tbl = tbl %>% filter(row_number() != n()) %>% arrange(Day,Hour) %>% group_by(Day) %>% mutate(group_id=row_number())
+
+ends = tbl %>% select(Day,Hour,end,group_id) %>% spread(Day,end)
+starts = tbl %>% select(Day,Hour,start,group_id) %>% spread(Day,start)
+ends = ends %>% rename_at(vars(-Hour, -group_id), funs(str_c(.,' End')))
+starts = starts %>% rename_at(vars(-Hour, -group_id), funs(str_c(.,' Start')))
+
+tbl2 = starts %>% inner_join(ends, by=c("Hour", "group_id"))
+
+cols = c("Hour", as.vector(sapply(c('Sun','Mon','Tue','Wed','Thu','Fri','Sat'), function(x) paste(x,c('Start','End'), sep =' '))))
+ncols = length(cols)
+tbl2 = tbl2 %>% select(-group_id) %>% select(cols)
+
+knitr::kable(tbl2, "latex", longtable = TRUE,
+             caption=paste("Number of Units starting and ending in each period"), row.names = FALSE,
+             align=c('r',rep('c',(ncols-1)))) %>% 
+  kable_styling(latex_options = c("hold_position", "repeat_header"), font_size = 7) %>% 
+  column_spec(seq(2,ncols,by=2), width = "0.6cm", border_right = FALSE, border_left = FALSE) %>%
+  column_spec(seq(3,ncols,by=2), width = "0.6cm", background = "#D3D3D3", border_right = FALSE, border_left = FALSE)
+
+```
+
+
