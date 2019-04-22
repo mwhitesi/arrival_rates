@@ -115,3 +115,15 @@ rmarkdown::render(
   output_file = ff
 )
 
+# Save shift matrices
+myorigin = '2017-10-01 00:00:00'
+fundDT = dataload__loadProvProfileMatrix("data/raw/Profile_2019-01-25.csv", myorigin)
+blockResult = drake::readd(crewsRmBl)
+ts = seq(as.POSIXct(myorigin, tz="UTC"), as.POSIXct(myorigin, tz="UTC")+7*24*60*60, by="15 mins")
+ts = ts[-length(ts)]
+blSM = blockResult$shift.matrix
+blDT = data.table(seq(1:nrow(blSM)), blSM)
+setnames(blDT, c("",as.character(ts)))
+
+fwrite(fundDT, file='data/interim/funded_unit_shift_matrix.csv')
+fwrite(blDT, file='data/interim/optimized_block_shift_matrix.csv')

@@ -207,6 +207,81 @@ dataload__loadProvProfile <- function(file, duration.in.min=15, do.plot=TRUE) {
   return(window.counts)
 }
 
+dataload__loadProvProfileMatrix <- function(file, origin = "2018-12-9 00:00:00") {
+  #'Load data csv data from Provincial profile query into shift matrix
+  #'
+  #'Converts Profile shift data into a weekly binary matrix
+  #'
+  #'@param file filepath to csv file
+  #'@param origin base matrix start on this date
+  
+  dt = data.table::fread(file, check.names = TRUE)
+  
+  # Filter EDMO 911 ALS/BLS units
+  dt = dt[(Level == "BLS" | Level == "ALS") & Type == "Ambulance"]
+  dt = dt[Category == "911"]
+  dt = dt[Ops.Zone == "Edmonton" & Town == "Edmonton"]
+  
+  # Not setup to handle seasonal
+  stopifnot(all(is.na(dt[,Seasonal])))
+  
+  # Extract hours
+  mins = seq(0,45,by=15)
+  hrs = seq(0,23)
+  times = sprintf("%02d.%02d", rep(hrs,each=length(mins)), mins)
+  days = c('Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat')
+  shift.cols = c(paste(rep(days, each=length(times)), times, sep='.'))
+  
+  shifts = dt[,shift.cols, with=FALSE]
+  
+  # Check no gaps in offsets
+  offsets = apply(shifts,1,function(x){any(x < 1 & x > 0)})
+  noffsets = sum(offsets)
+  stopifnot(all(dt[offsets, Peak.Split.OFFSET] == 1))
+  stopifnot(all(table(dt[offsets, Offset]) == noffsets/2))
+  
+  # Collapse offsets
+  offset_rows = which(offsets)
+  record = rep(FALSE, length(offset_rows))
+  for (i in 1:noffsets) {
+    if (!record[i]) {
+      # Unmerged offset
+      r1 = offset_rows[i]
+      
+      has_match = FALSE
+      for (j in (i+1):noffsets) {
+        if (!record[j]) {
+          r2 = offset_rows[j]
+          if (all(shifts[r1,] == shifts[r2,])) {
+            print(paste0('MATCHED ', r1, ', ', r2))
+            record[j] = TRUE
+            record[i] = TRUE
+            has_match = TRUE
+            shifts[r1, ] = 1
+            shifts[r2, ] = 0
+            break
+          }
+        }
+      }
+      
+      if ( !has_match) {
+        stop(paste0('No matching offset shift for ', r1))
+      }
+    }
+  }
+  
+  # Dropping offset rows:
+  drop_rows = which(apply(shifts,1,sum) == 0)
+  shifts2 = cbind(dt[-drop_rows,Unit.ID], shifts[-drop_rows])
+
+  ts = seq(as.POSIXct(origin, tz="UTC"), as.POSIXct(origin, tz="UTC")+7*24*60*60, by="15 mins")
+  ts = ts[-length(ts)]
+  setnames(shifts2, c("", as.character(ts)))
+  
+  
+  return(shifts2)
+}
+
 
 dataload__demand <- function(datetimes, duration.in.min=15, do.plot=TRUE) {
   #'Extract number of units on event in each duration
