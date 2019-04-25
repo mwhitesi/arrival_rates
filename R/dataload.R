@@ -257,7 +257,6 @@ dataload__loadProvProfileMatrix <- function(file, origin = "2018-12-9 00:00:00")
             record[j] = TRUE
             record[i] = TRUE
             has_match = TRUE
-            shifts[r1, ] = 1
             shifts[r2, ] = 0
             break
           }
