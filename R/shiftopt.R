@@ -81,6 +81,86 @@ shiftopt__optimize <- function(required.servers, shift.setup, solver="glpk") {
   
 }
 
+shiftopt__optimize_with_upper_limit <- function(required.servers, shift.setup, solver="glpk") {
+  # Optimize shifts so 
+  
+  
+  # Subtract demand that can be addressed by weekly repeating consistent shifts first
+  
+  # Schedule the 24/7 demand first
+  n247 = min(required.servers$s)
+  required.servers %<>% mutate(s = s - n247)
+  
+  
+  # Available shifts
+  sfts = shifts$shift_options(shift.setup$shift.types, shift.setup$period.stagger, shift.setup$period.days,
+                              shift.setup$daily.sc.window)
+  a = sfts$shifts
+  cost = sfts$cost
+  s = sfts$changeover
+  
+  # May be overkill, if j is only a single index
+  a_fun <- function(i, j) {
+    combos <- CJ(i,j)
+    ompr::colwise(combos[, a[V1,V2], by = seq_len(nrow(combos))]$V1)
+  }
+  
+  s_fun <- function(i, j) {
+    combos <- CJ(i,j)
+    ompr::colwise(combos[, s[V1,V2], by = seq_len(nrow(combos))]$V1)
+  }
+  
+  # Requirements
+  # Convert from weekday/weekend format to weekly matrix
+  if(shift.setup$period.days == 7) {
+    r = shiftopt__required_matrix2(required.servers, shift.setup$period.stagger, shift.setup$period.days)
+  } else {
+    stop(sprintf('Periods of length %i currently not available', shift.setup$period.days))
+  }
+  
+  # Solve for shifts
+  ns=dim(a)[1]
+  np=dim(a)[2]
+  maxsc = shift.setup[['max.sc']]
+  
+  optm <- MILPModel() %>%
+    add_variable(x[i], i = 1:ns, type = "integer") %>%
+    set_objective(sum_expr(ompr::colwise(cost[i])*x[i], i = 1:ns), "min") %>%
+    set_bounds(x[i], i=1:ns, lb = 0)
+  
+  # Required units constraint
+  for(j in 1:np) {
+    optm = add_constraint(optm, sum_expr(a_fun(i, j)*x[i], i=1:ns) >= r[j])
+    optm = add_constraint(optm, sum_expr(s_fun(i, j)*x[i], i=1:ns) <= maxsc)
+  }
+  
+  #result = optm %>% solve_model(with_ROI(solver = solver))
+  
+  # Set a time limit
+  result = optm %>% solve_model(with_ROI(solver = solver, verbosity=1, time_limit=5*60))
+  
+  soln = data.table(get_solution(result, x[i]))
+  soln = soln[value != 0]
+  
+  shift.summary = soln[,.(
+    type=rep(sfts$type[i], value),
+    n=rep(value, value),
+    cost=rep(sfts$costs[i], value)
+  )]
+  
+  # Add back the 24/7 shifts
+  shift.matrix = rbind(a[soln[,rep(i, value)],], matrix(1,nrow=n247,ncol=np))
+  shift.summary = rbind(shift.summary, 
+                        data.table(type=rep('week_247', n247),
+                                   n=1, # Only one of each? Sure
+                                   cost=rep(24*7, n247)
+                        )
+  )
+  
+  return(list(shifts=shift.summary, shift.matrix=shift.matrix))
+  
+}
+
 
 
 shiftopt__required_matrix2 <- function(required.servers, period.stagger, period.days) {
