@@ -102,7 +102,16 @@ shiftopt__optimize_with_upper_limit <- function(required.servers, shift.setup, s
   # May be overkill, if j is only a single index
   a_fun <- function(i, j) {
     combos <- CJ(i,j)
-    ompr::colwise(combos[, a[V1,V2], by = seq_len(nrow(combos))]$V1)
+    print(names(combos))
+    ompr::colwise(combos[, a[i,j], by = seq_len(nrow(combos))]$V1)
+  }
+  
+  a_fun2 <- function(i, j) {
+    print(length(i))
+    print(length(j))
+    combos <- CJ(i,j)
+    print(combos)
+    ompr::colwise(combos[, a[i,j], by = seq_len(nrow(combos))]$V1)
   }
   
   s_fun <- function(i, j) {
@@ -110,8 +119,9 @@ shiftopt__optimize_with_upper_limit <- function(required.servers, shift.setup, s
     ompr::colwise(combos[, s[V1,V2], by = seq_len(nrow(combos))]$V1)
   }
   
+  
+  
   # Requirements
-  # Convert from weekday/weekend format to weekly matrix
   if(shift.setup$period.days == 7) {
     r = shiftopt__required_matrix2(required.servers, shift.setup$period.stagger, shift.setup$period.days)
   } else {
@@ -124,14 +134,20 @@ shiftopt__optimize_with_upper_limit <- function(required.servers, shift.setup, s
   maxsc = shift.setup[['max.sc']]
   
   optm <- MILPModel() %>%
-    add_variable(x[i], i = 1:ns, type = "integer") %>%
-    set_objective(sum_expr(ompr::colwise(cost[i])*x[i], i = 1:ns), "min") %>%
-    set_bounds(x[i], i=1:ns, lb = 0)
+    add_variable(x[i], i = 1:ns, type = "integer", lb=0) %>%
+    #add_variable(delta[j], j = 1:np, type = "continuous", lb=0) %>%
+    #add_variable(delta, type = "continuous", lb=0) %>%
+    add_variable(delta, type = "continuous") %>%
+    #set_objective(sum_expr(delta[j], j = 1:np), "min") %>%
+    set_objective(delta, "min") %>%
+    add_constraint(sum_expr(ompr::colwise(cost[i])*x[i], i = 1:ns) <= 3000)
   
-  # Required units constraint
   for(j in 1:np) {
-    optm = add_constraint(optm, sum_expr(a_fun(i, j)*x[i], i=1:ns) >= r[j])
-    optm = add_constraint(optm, sum_expr(s_fun(i, j)*x[i], i=1:ns) <= maxsc)
+    # optm = add_constraint(optm, r[j] - sum_expr(ompr::colwise(a[i, j]) * x[i], i=1:ns) <= delta[j])
+    # optm = add_constraint(optm, r[j] - sum_expr(ompr::colwise(a[i, j]) * x[i], i=1:ns) >= -delta[j])
+    optm = add_constraint(optm, r[j] - sum_expr(ompr::colwise(a[i, j]) * x[i], i=1:ns) <= delta)
+    #optm = add_constraint(optm, r[j] - sum_expr(ompr::colwise(a[i, j]) * x[i], i=1:ns) >= -delta)
+    #optm = add_constraint(optm, sum_expr(s_fun(i, j)*x[i], i=1:ns) <= maxsc)
   }
   
   #result = optm %>% solve_model(with_ROI(solver = solver))

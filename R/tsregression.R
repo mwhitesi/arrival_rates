@@ -75,10 +75,10 @@ tsregression__fitFFTModel_threshold <- function(hd, duration.in.min=15, weekly.m
   yms = msts(d2[,count], seasonal.periods = c(24*hourly, 168*hourly))
   
   lambda = BoxCox.lambda(d2[,count])
-  yms.bc = msts(BoxCox(d2[,count], seasonal.periods = c(24*hourly, 168*hourly))
+  yms.bc = msts(BoxCox(d2[,count], lambda), seasonal.periods = c(24*hourly, 168*hourly))
   
   # Parameters originally selected using AICc
-  fit <- tslm(yms ~ fourier(yms, K = c(7,6)))
+  fit <- tslm(yms.bc ~ fourier(yms, K = c(7,6)))
   
   # Predict a current estimate and adjust 
   pi=.9
@@ -116,7 +116,14 @@ tsregression__fitFFTModel_threshold <- function(hd, duration.in.min=15, weekly.m
   return(reqd)
 }
 
-tsregression__zeroin_fit <- function()
+tsregression__optimise_prediction_interval <- function(p.int, fit, xreg, lambda, duration.in.min, target.mins) {
+  
+  pred <- forecast(fit, 
+                   xreg,
+                   level=c(p.int),
+                   lambda=lambda)
+  return(abs(target.mins - sum(pred$upper * duration.in.min)))
+}
 
 tsregression__FFTModelAICc <- function(hd, duration.in.min=15, prediction.interval=.995, do.plot=TRUE) {
   
