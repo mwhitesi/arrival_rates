@@ -38,6 +38,8 @@ shifts$shift_options <- function(shift.types, period.stagger=15, period.days=7, 
 
 shifts$encode_shift <- function(shift.type, period.stagger=15, period.days=7, daily.sc.window) {
   
+  
+  
   switch(shift.type,
          'week_247' = {
            sfts = shifts$encode_247(period.stagger, period.days, daily.sc.window)
@@ -172,7 +174,7 @@ shifts$encode_week <- function(sft.len, period.stagger=15, period.days=7, daily.
 
   }
   
-  sc = shifts$possible_period_sc(period.stagger, period.days, daily.sc.window, 12*60)
+  sc = shifts$possible_period_sc(period.stagger, period.days, daily.sc.window, sft.len)
   idx1 = matrix(c(rep_len(1:nshifts, length(sc$start)), sc$start), byrow=FALSE, ncol=2)
   idx2 = matrix(c(rep_len(1:nshifts, length(sc$start)), sc$end), byrow=FALSE, ncol=2)
   changeovers[idx1] = changeovers[idx1] + 1  
@@ -185,7 +187,7 @@ shifts$encode_week <- function(sft.len, period.stagger=15, period.days=7, daily.
 }
 
 shifts$encode_contiguous_days <- function(sft.len, sft.days, period.stagger=15, period.days=7, daily.sc.window=c(1,1440)) {
-  # Start same time every day for d consecutive days
+  # Start same time every day for sft.days consecutive days
   
   stopifnot(sft.days <= period.days)
 
@@ -233,6 +235,38 @@ shifts$encode_contiguous_days <- function(sft.len, sft.days, period.stagger=15, 
 
 }
 
+shifts$trim.shifts <- function(sft, co, nstart.periods, nend.periods) {
+  
+  svec = as.vector(t(sft))
+  cvec = as.vector(t(co))
+  
+  # Find boundaries of each row
+  nc = ncol(sft)
+  f = seq(1,length(svec),by=nc)
+  l = seq(nc,length(svec),by=nc)
+  
+  ci = which(cvec != 0)
+  
+  # Get starts
+  si = ci[ifelse(ci %in% l, FALSE, svec[ci+1] != 0)]
+  
+  # Get ends
+  ei = ci[ifelse(ci %in% f, FALSE, svec[ci-1] != 0)]
+  
+  # Trim
+  if(nstart.periods > 0) {
+    
+    svec[as.vector(sapply(0:(nstart.periods), function(x) si+x))] = 0
+  
+  }
+  if(nend.periods > 0) {
+    
+    svec[as.vector(sapply(1:nend.periods, function(x) ei-x))] = 0
+    
+  }
+  
+  return(matrix(svec, ncol = nc, byrow = TRUE))
+}
 
 shifts$plot_weekly_shift_gantt <- function(shift.summary, shift.matrix, period.stagger, myorigin = "2018-12-9 00:00:00") {
   

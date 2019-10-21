@@ -81,49 +81,31 @@ shiftopt__optimize <- function(required.servers, shift.setup, solver="glpk") {
   
 }
 
-shiftopt__optimize_with_upper_limit <- function(required.servers, shift.setup, solver="glpk") {
-  # Optimize shifts so 
-  
+shiftopt__optimize_with_constraints <- function(target.servers, baseline.servers, shift.setup, max.periods = 22176, solver="glpk") {
+  # Optimize shifts with constraints on total number of shift hours and required baseline servers
   
   # Subtract demand that can be addressed by weekly repeating consistent shifts first
   
   # Schedule the 24/7 demand first
-  n247 = min(required.servers$s)
-  required.servers %<>% mutate(s = s - n247)
+  n247 = min(baseline.servers$s)
+  bs = baseline.servers %>% mutate(s = s - n247)
+  ts = target.servers %>% mutate(s = s - n247)
   
   
   # Available shifts
   sfts = shifts$shift_options(shift.setup$shift.types, shift.setup$period.stagger, shift.setup$period.days,
                               shift.setup$daily.sc.window)
   a = sfts$shifts
-  cost = sfts$cost
+  cost = apply(a, 1, sum)
   s = sfts$changeover
   
-  # May be overkill, if j is only a single index
-  a_fun <- function(i, j) {
-    combos <- CJ(i,j)
-    print(names(combos))
-    ompr::colwise(combos[, a[i,j], by = seq_len(nrow(combos))]$V1)
-  }
+  # Trim ends of shifts to reflect end of shift procedures
+  a2 = shifts$trim.shifts(a, s, 0, 2)
   
-  a_fun2 <- function(i, j) {
-    print(length(i))
-    print(length(j))
-    combos <- CJ(i,j)
-    print(combos)
-    ompr::colwise(combos[, a[i,j], by = seq_len(nrow(combos))]$V1)
-  }
-  
-  s_fun <- function(i, j) {
-    combos <- CJ(i,j)
-    ompr::colwise(combos[, s[V1,V2], by = seq_len(nrow(combos))]$V1)
-  }
-  
-  
-  
-  # Requirements
+   # Requirements
   if(shift.setup$period.days == 7) {
-    r = shiftopt__required_matrix2(required.servers, shift.setup$period.stagger, shift.setup$period.days)
+    target = shiftopt__required_matrix2(ts, shift.setup$period.stagger, shift.setup$period.days)
+    baseline = shiftopt__required_matrix2(bs, shift.setup$period.stagger, shift.setup$period.days)
   } else {
     stop(sprintf('Periods of length %i currently not available', shift.setup$period.days))
   }
@@ -131,26 +113,20 @@ shiftopt__optimize_with_upper_limit <- function(required.servers, shift.setup, s
   # Solve for shifts
   ns=dim(a)[1]
   np=dim(a)[2]
-  maxsc = shift.setup[['max.sc']]
+  max.delta = target-baseline
+  max.periods = max.periods - n247 * np
   
   optm <- MILPModel() %>%
     add_variable(x[i], i = 1:ns, type = "integer", lb=0) %>%
-    #add_variable(delta[j], j = 1:np, type = "continuous", lb=0) %>%
-    #add_variable(delta, type = "continuous", lb=0) %>%
-    add_variable(delta, type = "continuous") %>%
-    #set_objective(sum_expr(delta[j], j = 1:np), "min") %>%
-    set_objective(delta, "min") %>%
-    add_constraint(sum_expr(ompr::colwise(cost[i])*x[i], i = 1:ns) <= 3000)
-  
+    add_variable(delta[j], j = 1:np, type = "continuous", lb=0) %>%
+    set_objective(sum_expr(delta[j], j = 1:np), "min") %>%
+    add_constraint(sum_expr(ompr::colwise(cost[i])*x[i], i = 1:ns) <= max.periods)
+
   for(j in 1:np) {
-    # optm = add_constraint(optm, r[j] - sum_expr(ompr::colwise(a[i, j]) * x[i], i=1:ns) <= delta[j])
-    # optm = add_constraint(optm, r[j] - sum_expr(ompr::colwise(a[i, j]) * x[i], i=1:ns) >= -delta[j])
-    optm = add_constraint(optm, r[j] - sum_expr(ompr::colwise(a[i, j]) * x[i], i=1:ns) <= delta)
-    #optm = add_constraint(optm, r[j] - sum_expr(ompr::colwise(a[i, j]) * x[i], i=1:ns) >= -delta)
-    #optm = add_constraint(optm, sum_expr(s_fun(i, j)*x[i], i=1:ns) <= maxsc)
+    optm = add_constraint(optm, target[j] - sum_expr(ompr::colwise(a2[i, j]) * x[i], i=1:ns) <= delta[j])
+    optm = add_constraint(optm, delta[j] <= max.delta[j])
   }
-  
-  #result = optm %>% solve_model(with_ROI(solver = solver))
+
   
   # Set a time limit
   result = optm %>% solve_model(with_ROI(solver = solver, verbosity=1, time_limit=5*60))
